@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interview Transcription Manager</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📝 Interview Transcription Manager</h1>
+            <p class="subtitle">Manage and analyze interview transcriptions with Claude AI</p>
+        </header>
+
+        <div class="main-content">
+            <!-- Left Panel: File List -->
+            <aside class="file-list-panel">
+                <div class="panel-header">
+                    <h2>Files</h2>
+                    <button id="refreshBtn" class="btn-small" title="Refresh file list">🔄</button>
+                </div>
+                <div class="filter-tabs">
+                    <button class="tab-btn active" data-filter="all">All</button>
+                    <button class="tab-btn" data-filter="raw">Raw</button>
+                    <button class="tab-btn" data-filter="formatted">Formatted</button>
+                    <button class="tab-btn" data-filter="artifact">Artifacts</button>
+                </div>
+                <div id="fileList" class="file-list">
+                    <div class="loading">Loading files...</div>
+                </div>
+            </aside>
+
+            <!-- Middle Panel: File Viewer -->
+            <section class="viewer-panel">
+                <div class="panel-header">
+                    <h2>Viewer</h2>
+                    <div class="viewer-actions">
+                        <button id="rawViewBtn" class="btn-small">Raw</button>
+                        <button id="renderedViewBtn" class="btn-small active">Rendered</button>
+                    </div>
+                </div>
+                <div id="fileViewer" class="file-viewer">
+                    <div class="empty-state">
+                        <p>Select a file to view its contents</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Panel: Prompt Interface -->
+            <aside class="prompt-panel">
+                <div class="panel-header">
+                    <h2>Prompt</h2>
+                </div>
+
+                <div class="prompt-form">
+                    <label for="artifactName">Artifact Name:</label>
+                    <input
+                        type="text"
+                        id="artifactName"
+                        placeholder="e.g., summary, analysis, report"
+                        class="input-field"
+                    >
+
+                    <label for="promptText">Prompt:</label>
+                    <textarea
+                        id="promptText"
+                        rows="6"
+                        placeholder="Enter your prompt here..."
+                        class="input-field"
+                    ></textarea>
+
+                    <label>Context Files:</label>
+                    <div id="selectedFiles" class="selected-files">
+                        <div class="empty-state-small">No files selected</div>
+                    </div>
+
+                    <div class="button-group">
+                        <button id="runPromptBtn" class="btn-primary">Run Prompt</button>
+                        <button id="clearSelectionBtn" class="btn-secondary">Clear Selection</button>
+                    </div>
+
+                    <div id="promptStatus" class="status-message"></div>
+                </div>
+
+                <div class="help-text">
+                    <h3>How to use:</h3>
+                    <ol>
+                        <li>Select one or more files from the left panel (click to select/deselect)</li>
+                        <li>Enter an artifact name (e.g., "summary")</li>
+                        <li>Write your prompt</li>
+                        <li>Click "Run Prompt" to generate a new artifact</li>
+                        <li>Re-run to create new versions</li>
+                    </ol>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

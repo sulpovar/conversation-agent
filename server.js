@@ -1,0 +1,332 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const fs = require('fs').promises;
+const path = require('path');
+const Anthropic = require('@anthropic-ai/sdk');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+const TRANSCRIPTIONS_DIR = process.env.TRANSCRIPTIONS_DIR || './transcriptions';
+const CHUNK_SIZE = 100000; // 100KB chunks for long transcriptions
+
+const anthropic = new Anthropic({
+  apiKey: process.env.CLAUDE_API_KEY,
+});
+
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.static('public'));
+
+// Ensure transcriptions directory exists
+async function ensureTranscriptionsDir() {
+  try {
+    await fs.mkdir(TRANSCRIPTIONS_DIR, { recursive: true });
+    console.log(`✓ Transcriptions directory ready: ${TRANSCRIPTIONS_DIR}`);
+  } catch (error) {
+    console.error('Error creating transcriptions directory:', error);
+  }
+}
+
+// Format timestamp for filenames
+function getTimestamp() {
+  const now = new Date();
+  return now.toISOString().replace(/[-:]/g, '').replace('T', '_').split('.')[0];
+}
+
+// Parse filename to extract metadata
+function parseFilename(filename) {
+  const parts = filename.split('_');
+  let type = 'unknown';
+  let timestamp = null;
+  let version = null;
+  let name = null;
+
+  if (filename.startsWith('interview_raw_')) {
+    type = 'raw';
+    timestamp = parts.slice(2).join('_').replace('.txt', '');
+  } else if (filename.startsWith('interview_formatted_')) {
+    type = 'formatted';
+    timestamp = parts.slice(2).join('_').replace('.md', '');
+  } else if (filename.startsWith('artifact_')) {
+    type = 'artifact';
+    name = parts[1];
+    const versionPart = parts[2];
+    version = versionPart ? parseInt(versionPart.replace('v', '')) : null;
+    timestamp = parts.slice(3).join('_').replace('.md', '');
+  }
+
+  return { type, timestamp, version, name };
+}
+
+// Split text into chunks
+function splitIntoChunks(text, chunkSize) {
+  const chunks = [];
+  for (let i = 0; i < text.length; i += chunkSize) {
+    chunks.push(text.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
+// Format transcription using Claude Haiku
+async function formatTranscription(rawText) {
+  const chunks = splitIntoChunks(rawText, CHUNK_SIZE);
+  const formattedChunks = [];
+
+  console.log(`Formatting transcription in ${chunks.length} chunk(s)...`);
+
+  for (let i = 0; i < chunks.length; i++) {
+    console.log(`Processing chunk ${i + 1}/${chunks.length}...`);
+
+    const prompt = chunks.length > 1
+      ? `This is chunk ${i + 1} of ${chunks.length} from a job interview transcription. Format this chunk into clean, readable markdown with proper structure. Include speaker labels, timestamps if present, and organize into sections. Maintain the exact content but improve readability.\n\nChunk:\n${chunks[i]}`
+      : `Format this job interview transcription into clean, readable markdown. Include:\n- Proper headers and sections\n- Speaker labels (e.g., Interviewer, Candidate)\n- Timestamps if present\n- Key topics and themes\n- Professional formatting\n\nTranscription:\n${chunks[i]}`;
+
+    try {
+      const message = await anthropic.messages.create({
+        model: 'claude-3-5-haiku-20241022',
+        max_tokens: 4096,
+        messages: [{
+          role: 'user',
+          content: prompt
+        }]
+      });
+
+      formattedChunks.push(message.content[0].text);
+    } catch (error) {
+      console.error(`Error formatting chunk ${i + 1}:`, error.message);
+      formattedChunks.push(`\n\n## Chunk ${i + 1} (Error formatting)\n\n${chunks[i]}\n\n`);
+    }
+  }
+
+  // Combine chunks with section markers if multiple
+  if (chunks.length > 1) {
+    return formattedChunks.join('\n\n---\n\n');
+  }
+  return formattedChunks[0];
+}
+
+// Process raw transcriptions on startup
+async function processRawTranscriptions() {
+  try {
+    const files = await fs.readdir(TRANSCRIPTIONS_DIR);
+    const rawFiles = files.filter(f => f.startsWith('interview_raw_') && f.endsWith('.txt'));
+
+    for (const rawFile of rawFiles) {
+      const { timestamp } = parseFilename(rawFile);
+      const formattedFile = `interview_formatted_${timestamp}.md`;
+      const formattedPath = path.join(TRANSCRIPTIONS_DIR, formattedFile);
+
+      // Check if formatted version already exists
+      try {
+        await fs.access(formattedPath);
+        console.log(`✓ Formatted version already exists: ${formattedFile}`);
+        continue;
+      } catch {
+        // File doesn't exist, proceed with formatting
+      }
+
+      console.log(`📝 Formatting: ${rawFile}`);
+      const rawPath = path.join(TRANSCRIPTIONS_DIR, rawFile);
+      const rawText = await fs.readFile(rawPath, 'utf-8');
+
+      const formatted = await formatTranscription(rawText);
+      await fs.writeFile(formattedPath, formatted, 'utf-8');
+
+      // Create metadata file
+      const metaPath = path.join(TRANSCRIPTIONS_DIR, `${formattedFile}.meta.json`);
+      const metadata = {
+        sourceFile: rawFile,
+        createdAt: new Date().toISOString(),
+        model: 'claude-3-5-haiku-20241022',
+        type: 'formatted_transcription'
+      };
+      await fs.writeFile(metaPath, JSON.stringify(metadata, null, 2), 'utf-8');
+
+      console.log(`✓ Created: ${formattedFile}`);
+    }
+  } catch (error) {
+    console.error('Error processing raw transcriptions:', error);
+  }
+}
+
+// API: List all files
+app.get('/api/files', async (req, res) => {
+  try {
+    const files = await fs.readdir(TRANSCRIPTIONS_DIR);
+    const fileDetails = await Promise.all(
+      files
+        .filter(f => !f.endsWith('.meta.json'))
+        .map(async (filename) => {
+          const filePath = path.join(TRANSCRIPTIONS_DIR, filename);
+          const stats = await fs.stat(filePath);
+          const metadata = parseFilename(filename);
+
+          // Try to load metadata file if exists
+          let metaContent = null;
+          try {
+            const metaPath = path.join(TRANSCRIPTIONS_DIR, `${filename}.meta.json`);
+            const metaData = await fs.readFile(metaPath, 'utf-8');
+            metaContent = JSON.parse(metaData);
+          } catch {
+            // No metadata file
+          }
+
+          return {
+            filename,
+            size: stats.size,
+            modified: stats.mtime,
+            ...metadata,
+            metadata: metaContent
+          };
+        })
+    );
+
+    // Sort by modified date (newest first)
+    fileDetails.sort((a, b) => new Date(b.modified) - new Date(a.modified));
+
+    res.json(fileDetails);
+  } catch (error) {
+    console.error('Error listing files:', error);
+    res.status(500).json({ error: 'Failed to list files' });
+  }
+});
+
+// API: Read file content
+app.get('/api/files/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const filePath = path.join(TRANSCRIPTIONS_DIR, filename);
+    const content = await fs.readFile(filePath, 'utf-8');
+    res.json({ content });
+  } catch (error) {
+    console.error('Error reading file:', error);
+    res.status(500).json({ error: 'Failed to read file' });
+  }
+});
+
+// API: Run prompt with files
+app.post('/api/prompt', async (req, res) => {
+  try {
+    const { prompt, files, artifactName } = req.body;
+
+    if (!prompt || !artifactName) {
+      return res.status(400).json({ error: 'Prompt and artifact name are required' });
+    }
+
+    // Read file contents
+    let contextText = '';
+    if (files && files.length > 0) {
+      const fileContents = await Promise.all(
+        files.map(async (filename) => {
+          const filePath = path.join(TRANSCRIPTIONS_DIR, filename);
+          const content = await fs.readFile(filePath, 'utf-8');
+          return `\n\n--- File: ${filename} ---\n\n${content}`;
+        })
+      );
+      contextText = fileContents.join('\n\n');
+    }
+
+    // Determine next version number
+    const existingFiles = await fs.readdir(TRANSCRIPTIONS_DIR);
+    const existingVersions = existingFiles
+      .filter(f => f.startsWith(`artifact_${artifactName}_v`))
+      .map(f => {
+        const match = f.match(/artifact_.*_v(\d+)_/);
+        return match ? parseInt(match[1]) : 0;
+      });
+    const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
+
+    // Call Claude
+    const fullPrompt = `${prompt}\n\n${contextText}`;
+
+    console.log(`Running prompt for artifact: ${artifactName} (v${nextVersion})`);
+
+    const message = await anthropic.messages.create({
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 8192,
+      messages: [{
+        role: 'user',
+        content: fullPrompt
+      }]
+    });
+
+    const result = message.content[0].text;
+
+    // Save artifact
+    const timestamp = getTimestamp();
+    const artifactFilename = `artifact_${artifactName}_v${nextVersion}_${timestamp}.md`;
+    const artifactPath = path.join(TRANSCRIPTIONS_DIR, artifactFilename);
+    await fs.writeFile(artifactPath, result, 'utf-8');
+
+    // Save metadata
+    const metaPath = path.join(TRANSCRIPTIONS_DIR, `${artifactFilename}.meta.json`);
+    const metadata = {
+      prompt,
+      files: files || [],
+      version: nextVersion,
+      createdAt: new Date().toISOString(),
+      model: 'claude-3-5-haiku-20241022',
+      type: 'prompt_artifact'
+    };
+    await fs.writeFile(metaPath, JSON.stringify(metadata, null, 2), 'utf-8');
+
+    console.log(`✓ Created: ${artifactFilename}`);
+
+    res.json({
+      filename: artifactFilename,
+      content: result,
+      version: nextVersion,
+      metadata
+    });
+  } catch (error) {
+    console.error('Error running prompt:', error);
+    res.status(500).json({ error: error.message || 'Failed to run prompt' });
+  }
+});
+
+// API: Re-run prompt (create new version)
+app.post('/api/rerun-prompt', async (req, res) => {
+  try {
+    const { filename } = req.body;
+
+    if (!filename) {
+      return res.status(400).json({ error: 'Filename is required' });
+    }
+
+    // Load metadata
+    const metaPath = path.join(TRANSCRIPTIONS_DIR, `${filename}.meta.json`);
+    const metaData = await fs.readFile(metaPath, 'utf-8');
+    const metadata = JSON.parse(metaData);
+
+    // Extract artifact name from filename
+    const { name: artifactName } = parseFilename(filename);
+
+    // Re-run the prompt
+    const result = await app.request.post('/api/prompt', {
+      body: {
+        prompt: metadata.prompt,
+        files: metadata.files,
+        artifactName
+      }
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error re-running prompt:', error);
+    res.status(500).json({ error: 'Failed to re-run prompt' });
+  }
+});
+
+// Start server
+async function startServer() {
+  await ensureTranscriptionsDir();
+  await processRawTranscriptions();
+
+  app.listen(PORT, () => {
+    console.log(`\n🚀 Server running at http://localhost:${PORT}`);
+    console.log(`📁 Transcriptions directory: ${TRANSCRIPTIONS_DIR}\n`);
+  });
+}
+
+startServer();
