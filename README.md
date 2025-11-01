@@ -14,12 +14,21 @@ A local web application for managing job interview transcriptions with Claude AI
    cp .env.example .env
    ```
 
-3. Edit `.env` and add your Claude API key:
+3. Edit `.env` and configure:
    ```
    CLAUDE_API_KEY=sk-ant-your-actual-key-here
    TRANSCRIPTIONS_DIR=./transcriptions
+   PROMPTS_DIR=./prompts
    PORT=3000
+   CLAUDE_MODEL=claude-3-5-haiku-20241022
    ```
+
+   **Model Selection:**
+   - `claude-3-5-haiku-20241022` - [Recommended] Fast, cost-effective
+   - `claude-sonnet-4-5-20250514` - Latest, best quality
+   - `claude-sonnet-4-20250514` - Excellent quality
+   - `claude-3-5-sonnet-20241022` - Balanced performance
+   - `claude-3-opus-20240229` - Legacy, most capable
 
 4. Create the transcriptions directory:
    ```bash

@@ -9,6 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const TRANSCRIPTIONS_DIR = process.env.TRANSCRIPTIONS_DIR || './transcriptions';
 const PROMPTS_DIR = process.env.PROMPTS_DIR || './prompts';
+const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-3-5-haiku-20241022';
 const CHUNK_SIZE = 100000; // 100KB chunks for long transcriptions
 
 const anthropic = new Anthropic({
@@ -93,7 +94,7 @@ async function formatTranscription(rawText) {
 
     try {
       const message = await anthropic.messages.create({
-        model: 'claude-3-5-haiku-20241022',
+        model: CLAUDE_MODEL,
         max_tokens: 4096,
         messages: [{
           role: 'user',
@@ -147,7 +148,7 @@ async function processRawTranscriptions() {
       const metadata = {
         sourceFile: rawFile,
         createdAt: new Date().toISOString(),
-        model: 'claude-3-5-haiku-20241022',
+        model: CLAUDE_MODEL,
         type: 'formatted_transcription'
       };
       await fs.writeFile(metaPath, JSON.stringify(metadata, null, 2), 'utf-8');
@@ -252,7 +253,7 @@ app.post('/api/prompt', async (req, res) => {
     console.log(`Running prompt for artifact: ${artifactName} (v${nextVersion})`);
 
     const message = await anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
+      model: CLAUDE_MODEL,
       max_tokens: 8192,
       messages: [{
         role: 'user',
@@ -275,7 +276,7 @@ app.post('/api/prompt', async (req, res) => {
       files: files || [],
       version: nextVersion,
       createdAt: new Date().toISOString(),
-      model: 'claude-3-5-haiku-20241022',
+      model: CLAUDE_MODEL,
       type: 'prompt_artifact'
     };
     await fs.writeFile(metaPath, JSON.stringify(metadata, null, 2), 'utf-8');
@@ -613,7 +614,7 @@ app.post('/api/run-saved-prompt', async (req, res) => {
     console.log(`Running saved prompt for artifact: ${artifactName} (v${nextVersion})`);
 
     const message = await anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
+      model: CLAUDE_MODEL,
       max_tokens: 8192,
       messages: [{
         role: 'user',
@@ -637,7 +638,7 @@ app.post('/api/run-saved-prompt', async (req, res) => {
       files: files || [],
       version: nextVersion,
       createdAt: new Date().toISOString(),
-      model: 'claude-3-5-haiku-20241022',
+      model: CLAUDE_MODEL,
       type: 'prompt_artifact'
     };
     await fs.writeFile(metaPath, JSON.stringify(metadata, null, 2), 'utf-8');
@@ -664,7 +665,8 @@ async function startServer() {
   app.listen(PORT, () => {
     console.log(`\n🚀 Server running at http://localhost:${PORT}`);
     console.log(`📁 Transcriptions directory: ${TRANSCRIPTIONS_DIR}`);
-    console.log(`📝 Prompts directory: ${PROMPTS_DIR}\n`);
+    console.log(`📝 Prompts directory: ${PROMPTS_DIR}`);
+    console.log(`🤖 Claude model: ${CLAUDE_MODEL}\n`);
   });
 }
 
