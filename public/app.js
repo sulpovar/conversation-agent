@@ -42,11 +42,13 @@ function setupEventListeners() {
 
     document.getElementById('runPromptBtn').addEventListener('click', runCustomPrompt);
     document.getElementById('saveAsPromptBtn').addEventListener('click', () => openPromptModal('new'));
+    document.getElementById('clearCustomSelectionBtn').addEventListener('click', clearSelection);
 
     document.getElementById('newPromptBtn').addEventListener('click', () => openPromptModal('new'));
     document.getElementById('runSavedPromptBtn').addEventListener('click', runSavedPrompt);
     document.getElementById('editPromptBtn').addEventListener('click', () => openPromptModal('edit'));
     document.getElementById('deletePromptBtn').addEventListener('click', deletePrompt);
+    document.getElementById('clearSavedSelectionBtn').addEventListener('click', clearSelection);
 
     document.getElementById('savePromptModalBtn').addEventListener('click', savePromptFromModal);
 }

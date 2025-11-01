@@ -81,10 +81,14 @@
                             class="input-field"
                         >
 
-                        <label>Context Files:</label>
+                        <label>
+                            Context Files:
+                            <span class="help-hint">Ctrl+Click files in the left panel</span>
+                        </label>
                         <div id="savedSelectedFiles" class="selected-files">
                             <div class="empty-state-small">No files selected</div>
                         </div>
+                        <button id="clearSavedSelectionBtn" class="btn-small-secondary">Clear Selection</button>
 
                         <div class="button-group">
                             <button id="runSavedPromptBtn" class="btn-primary" disabled>Run Prompt</button>
@@ -115,10 +119,14 @@
                             class="input-field"
                         ></textarea>
 
-                        <label>Context Files:</label>
+                        <label>
+                            Context Files:
+                            <span class="help-hint">Ctrl+Click files in the left panel</span>
+                        </label>
                         <div id="selectedFiles" class="selected-files">
                             <div class="empty-state-small">No files selected</div>
                         </div>
+                        <button id="clearCustomSelectionBtn" class="btn-small-secondary">Clear Selection</button>
 
                         <div class="button-group">
                             <button id="runPromptBtn" class="btn-primary">Run Prompt</button>
