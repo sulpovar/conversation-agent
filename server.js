@@ -8,6 +8,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const TRANSCRIPTIONS_DIR = process.env.TRANSCRIPTIONS_DIR || './transcriptions';
+const PROMPTS_DIR = process.env.PROMPTS_DIR || './prompts';
 const CHUNK_SIZE = 100000; // 100KB chunks for long transcriptions
 
 const anthropic = new Anthropic({
@@ -18,13 +19,15 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
 
-// Ensure transcriptions directory exists
-async function ensureTranscriptionsDir() {
+// Ensure transcriptions and prompts directories exist
+async function ensureDirectories() {
   try {
     await fs.mkdir(TRANSCRIPTIONS_DIR, { recursive: true });
     console.log(`✓ Transcriptions directory ready: ${TRANSCRIPTIONS_DIR}`);
+    await fs.mkdir(PROMPTS_DIR, { recursive: true });
+    console.log(`✓ Prompts directory ready: ${PROMPTS_DIR}`);
   } catch (error) {
-    console.error('Error creating transcriptions directory:', error);
+    console.error('Error creating directories:', error);
   }
 }
 
@@ -54,6 +57,12 @@ function parseFilename(filename) {
     const versionPart = parts[2];
     version = versionPart ? parseInt(versionPart.replace('v', '')) : null;
     timestamp = parts.slice(3).join('_').replace('.md', '');
+  } else if (filename.startsWith('prompt_')) {
+    type = 'prompt';
+    name = parts[1];
+    const versionPart = parts[2];
+    version = versionPart ? parseInt(versionPart.replace('v', '')) : null;
+    timestamp = parts.slice(3).join('_').replace('.txt', '');
   }
 
   return { type, timestamp, version, name };
@@ -318,14 +327,344 @@ app.post('/api/rerun-prompt', async (req, res) => {
   }
 });
 
+// ===== PROMPT MANAGEMENT APIs =====
+
+// API: List all prompts (only visible ones)
+app.get('/api/prompts', async (req, res) => {
+  try {
+    const files = await fs.readdir(PROMPTS_DIR);
+    const promptFiles = files.filter(f => f.startsWith('prompt_') && f.endsWith('.txt'));
+
+    const prompts = await Promise.all(
+      promptFiles.map(async (filename) => {
+        const filePath = path.join(PROMPTS_DIR, filename);
+        const stats = await fs.stat(filePath);
+        const metadata = parseFilename(filename);
+
+        // Load metadata file
+        let metaContent = null;
+        try {
+          const metaPath = path.join(PROMPTS_DIR, `${filename}.meta.json`);
+          const metaData = await fs.readFile(metaPath, 'utf-8');
+          metaContent = JSON.parse(metaData);
+        } catch {
+          // No metadata file, default to visible
+          metaContent = { visible: true };
+        }
+
+        // Only return visible prompts
+        if (!metaContent.visible) {
+          return null;
+        }
+
+        return {
+          filename,
+          size: stats.size,
+          modified: stats.mtime,
+          ...metadata,
+          metadata: metaContent
+        };
+      })
+    );
+
+    // Filter out null values (hidden prompts) and sort by name and version
+    const visiblePrompts = prompts
+      .filter(p => p !== null)
+      .sort((a, b) => {
+        if (a.name !== b.name) {
+          return a.name.localeCompare(b.name);
+        }
+        return (b.version || 0) - (a.version || 0);
+      });
+
+    res.json(visiblePrompts);
+  } catch (error) {
+    console.error('Error listing prompts:', error);
+    res.status(500).json({ error: 'Failed to list prompts' });
+  }
+});
+
+// API: Get prompt content
+app.get('/api/prompts/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const filePath = path.join(PROMPTS_DIR, filename);
+    const content = await fs.readFile(filePath, 'utf-8');
+
+    // Load metadata
+    let metaContent = null;
+    try {
+      const metaPath = path.join(PROMPTS_DIR, `${filename}.meta.json`);
+      const metaData = await fs.readFile(metaPath, 'utf-8');
+      metaContent = JSON.parse(metaData);
+    } catch {
+      metaContent = { visible: true };
+    }
+
+    res.json({ content, metadata: metaContent });
+  } catch (error) {
+    console.error('Error reading prompt:', error);
+    res.status(500).json({ error: 'Failed to read prompt' });
+  }
+});
+
+// API: Create new prompt
+app.post('/api/prompts', async (req, res) => {
+  try {
+    const { name, content, description, category } = req.body;
+
+    if (!name || !content) {
+      return res.status(400).json({ error: 'Name and content are required' });
+    }
+
+    // Validate name (alphanumeric and hyphens only)
+    if (!/^[a-zA-Z0-9-]+$/.test(name)) {
+      return res.status(400).json({ error: 'Name can only contain letters, numbers, and hyphens' });
+    }
+
+    // Determine next version number
+    const existingFiles = await fs.readdir(PROMPTS_DIR);
+    const existingVersions = existingFiles
+      .filter(f => f.startsWith(`prompt_${name}_v`))
+      .map(f => {
+        const match = f.match(/prompt_.*_v(\d+)_/);
+        return match ? parseInt(match[1]) : 0;
+      });
+    const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
+
+    // Create prompt file
+    const timestamp = getTimestamp();
+    const promptFilename = `prompt_${name}_v${nextVersion}_${timestamp}.txt`;
+    const promptPath = path.join(PROMPTS_DIR, promptFilename);
+    await fs.writeFile(promptPath, content, 'utf-8');
+
+    // Create metadata file
+    const metaPath = path.join(PROMPTS_DIR, `${promptFilename}.meta.json`);
+    const metadata = {
+      name,
+      version: nextVersion,
+      description: description || '',
+      category: category || 'user',
+      createdAt: new Date().toISOString(),
+      visible: true,
+      type: 'user',
+      parentVersion: nextVersion > 1 ? nextVersion - 1 : null
+    };
+    await fs.writeFile(metaPath, JSON.stringify(metadata, null, 2), 'utf-8');
+
+    console.log(`✓ Created prompt: ${promptFilename}`);
+
+    res.json({
+      filename: promptFilename,
+      content,
+      version: nextVersion,
+      metadata
+    });
+  } catch (error) {
+    console.error('Error creating prompt:', error);
+    res.status(500).json({ error: error.message || 'Failed to create prompt' });
+  }
+});
+
+// API: Edit prompt (creates new version)
+app.post('/api/prompts/edit', async (req, res) => {
+  try {
+    const { filename, content, description } = req.body;
+
+    if (!filename || !content) {
+      return res.status(400).json({ error: 'Filename and content are required' });
+    }
+
+    // Parse original filename
+    const { name } = parseFilename(filename);
+
+    if (!name) {
+      return res.status(400).json({ error: 'Invalid prompt filename' });
+    }
+
+    // Load original metadata to get category
+    let originalMeta = {};
+    try {
+      const originalMetaPath = path.join(PROMPTS_DIR, `${filename}.meta.json`);
+      const originalMetaData = await fs.readFile(originalMetaPath, 'utf-8');
+      originalMeta = JSON.parse(originalMetaData);
+    } catch {
+      // No original metadata
+    }
+
+    // Create new version using the create endpoint logic
+    const existingFiles = await fs.readdir(PROMPTS_DIR);
+    const existingVersions = existingFiles
+      .filter(f => f.startsWith(`prompt_${name}_v`))
+      .map(f => {
+        const match = f.match(/prompt_.*_v(\d+)_/);
+        return match ? parseInt(match[1]) : 0;
+      });
+    const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
+
+    const timestamp = getTimestamp();
+    const promptFilename = `prompt_${name}_v${nextVersion}_${timestamp}.txt`;
+    const promptPath = path.join(PROMPTS_DIR, promptFilename);
+    await fs.writeFile(promptPath, content, 'utf-8');
+
+    const metaPath = path.join(PROMPTS_DIR, `${promptFilename}.meta.json`);
+    const metadata = {
+      name,
+      version: nextVersion,
+      description: description || originalMeta.description || '',
+      category: originalMeta.category || 'user',
+      createdAt: new Date().toISOString(),
+      visible: true,
+      type: 'user',
+      parentVersion: nextVersion - 1
+    };
+    await fs.writeFile(metaPath, JSON.stringify(metadata, null, 2), 'utf-8');
+
+    console.log(`✓ Created new version: ${promptFilename}`);
+
+    res.json({
+      filename: promptFilename,
+      content,
+      version: nextVersion,
+      metadata
+    });
+  } catch (error) {
+    console.error('Error editing prompt:', error);
+    res.status(500).json({ error: error.message || 'Failed to edit prompt' });
+  }
+});
+
+// API: Delete/hide prompt
+app.post('/api/prompts/delete', async (req, res) => {
+  try {
+    const { filename } = req.body;
+
+    if (!filename) {
+      return res.status(400).json({ error: 'Filename is required' });
+    }
+
+    // Load metadata
+    const metaPath = path.join(PROMPTS_DIR, `${filename}.meta.json`);
+    let metadata = {};
+
+    try {
+      const metaData = await fs.readFile(metaPath, 'utf-8');
+      metadata = JSON.parse(metaData);
+    } catch {
+      // No metadata file, create one
+      metadata = { visible: true };
+    }
+
+    // Set visible to false
+    metadata.visible = false;
+    metadata.deletedAt = new Date().toISOString();
+
+    // Save updated metadata
+    await fs.writeFile(metaPath, JSON.stringify(metadata, null, 2), 'utf-8');
+
+    console.log(`✓ Hidden prompt: ${filename}`);
+
+    res.json({ success: true, message: 'Prompt hidden successfully' });
+  } catch (error) {
+    console.error('Error deleting prompt:', error);
+    res.status(500).json({ error: 'Failed to delete prompt' });
+  }
+});
+
+// API: Run prompt with files (using saved prompt)
+app.post('/api/run-saved-prompt', async (req, res) => {
+  try {
+    const { promptFilename, files, artifactName } = req.body;
+
+    if (!promptFilename || !artifactName) {
+      return res.status(400).json({ error: 'Prompt filename and artifact name are required' });
+    }
+
+    // Read prompt content
+    const promptPath = path.join(PROMPTS_DIR, promptFilename);
+    const promptContent = await fs.readFile(promptPath, 'utf-8');
+
+    // Read file contents
+    let contextText = '';
+    if (files && files.length > 0) {
+      const fileContents = await Promise.all(
+        files.map(async (filename) => {
+          const filePath = path.join(TRANSCRIPTIONS_DIR, filename);
+          const content = await fs.readFile(filePath, 'utf-8');
+          return `\n\n--- File: ${filename} ---\n\n${content}`;
+        })
+      );
+      contextText = fileContents.join('\n\n');
+    }
+
+    // Determine next version number
+    const existingFiles = await fs.readdir(TRANSCRIPTIONS_DIR);
+    const existingVersions = existingFiles
+      .filter(f => f.startsWith(`artifact_${artifactName}_v`))
+      .map(f => {
+        const match = f.match(/artifact_.*_v(\d+)_/);
+        return match ? parseInt(match[1]) : 0;
+      });
+    const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
+
+    // Call Claude
+    const fullPrompt = `${promptContent}\n\n${contextText}`;
+
+    console.log(`Running saved prompt for artifact: ${artifactName} (v${nextVersion})`);
+
+    const message = await anthropic.messages.create({
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 8192,
+      messages: [{
+        role: 'user',
+        content: fullPrompt
+      }]
+    });
+
+    const result = message.content[0].text;
+
+    // Save artifact
+    const timestamp = getTimestamp();
+    const artifactFilename = `artifact_${artifactName}_v${nextVersion}_${timestamp}.md`;
+    const artifactPath = path.join(TRANSCRIPTIONS_DIR, artifactFilename);
+    await fs.writeFile(artifactPath, result, 'utf-8');
+
+    // Save metadata
+    const metaPath = path.join(TRANSCRIPTIONS_DIR, `${artifactFilename}.meta.json`);
+    const metadata = {
+      promptFile: promptFilename,
+      prompt: promptContent,
+      files: files || [],
+      version: nextVersion,
+      createdAt: new Date().toISOString(),
+      model: 'claude-3-5-haiku-20241022',
+      type: 'prompt_artifact'
+    };
+    await fs.writeFile(metaPath, JSON.stringify(metadata, null, 2), 'utf-8');
+
+    console.log(`✓ Created: ${artifactFilename}`);
+
+    res.json({
+      filename: artifactFilename,
+      content: result,
+      version: nextVersion,
+      metadata
+    });
+  } catch (error) {
+    console.error('Error running saved prompt:', error);
+    res.status(500).json({ error: error.message || 'Failed to run saved prompt' });
+  }
+});
+
 // Start server
 async function startServer() {
-  await ensureTranscriptionsDir();
+  await ensureDirectories();
   await processRawTranscriptions();
 
   app.listen(PORT, () => {
     console.log(`\n🚀 Server running at http://localhost:${PORT}`);
-    console.log(`📁 Transcriptions directory: ${TRANSCRIPTIONS_DIR}\n`);
+    console.log(`📁 Transcriptions directory: ${TRANSCRIPTIONS_DIR}`);
+    console.log(`📝 Prompts directory: ${PROMPTS_DIR}\n`);
   });
 }
 

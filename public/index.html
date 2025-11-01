@@ -51,50 +51,143 @@
             <!-- Right Panel: Prompt Interface -->
             <aside class="prompt-panel">
                 <div class="panel-header">
-                    <h2>Prompt</h2>
+                    <h2>Prompts</h2>
+                    <div class="prompt-mode-tabs">
+                        <button id="savedPromptsTabBtn" class="tab-btn-small active">Saved</button>
+                        <button id="customPromptTabBtn" class="tab-btn-small">Custom</button>
+                    </div>
                 </div>
 
-                <div class="prompt-form">
-                    <label for="artifactName">Artifact Name:</label>
-                    <input
-                        type="text"
-                        id="artifactName"
-                        placeholder="e.g., summary, analysis, report"
-                        class="input-field"
-                    >
-
-                    <label for="promptText">Prompt:</label>
-                    <textarea
-                        id="promptText"
-                        rows="6"
-                        placeholder="Enter your prompt here..."
-                        class="input-field"
-                    ></textarea>
-
-                    <label>Context Files:</label>
-                    <div id="selectedFiles" class="selected-files">
-                        <div class="empty-state-small">No files selected</div>
+                <!-- Saved Prompts View -->
+                <div id="savedPromptsView" class="prompt-view active">
+                    <div class="prompt-list-header">
+                        <h3>Available Prompts</h3>
+                        <button id="newPromptBtn" class="btn-small">+ New</button>
+                    </div>
+                    <div id="promptList" class="prompt-list">
+                        <div class="loading">Loading prompts...</div>
                     </div>
 
-                    <div class="button-group">
-                        <button id="runPromptBtn" class="btn-primary">Run Prompt</button>
-                        <button id="clearSelectionBtn" class="btn-secondary">Clear Selection</button>
+                    <div class="prompt-details" id="promptDetails">
+                        <div class="empty-state-small">Select a prompt to view details</div>
                     </div>
 
-                    <div id="promptStatus" class="status-message"></div>
+                    <div class="prompt-actions-section">
+                        <label>Artifact Name:</label>
+                        <input
+                            type="text"
+                            id="savedArtifactName"
+                            placeholder="e.g., summary, analysis"
+                            class="input-field"
+                        >
+
+                        <label>Context Files:</label>
+                        <div id="savedSelectedFiles" class="selected-files">
+                            <div class="empty-state-small">No files selected</div>
+                        </div>
+
+                        <div class="button-group">
+                            <button id="runSavedPromptBtn" class="btn-primary" disabled>Run Prompt</button>
+                            <button id="editPromptBtn" class="btn-secondary" disabled>Edit</button>
+                            <button id="deletePromptBtn" class="btn-danger" disabled>Delete</button>
+                        </div>
+
+                        <div id="savedPromptStatus" class="status-message"></div>
+                    </div>
                 </div>
 
-                <div class="help-text">
-                    <h3>How to use:</h3>
-                    <ol>
-                        <li>Select one or more files from the left panel (click to select/deselect)</li>
-                        <li>Enter an artifact name (e.g., "summary")</li>
-                        <li>Write your prompt</li>
-                        <li>Click "Run Prompt" to generate a new artifact</li>
-                        <li>Re-run to create new versions</li>
-                    </ol>
+                <!-- Custom Prompt View -->
+                <div id="customPromptView" class="prompt-view">
+                    <div class="prompt-form">
+                        <label for="artifactName">Artifact Name:</label>
+                        <input
+                            type="text"
+                            id="artifactName"
+                            placeholder="e.g., summary, analysis, report"
+                            class="input-field"
+                        >
+
+                        <label for="promptText">Prompt:</label>
+                        <textarea
+                            id="promptText"
+                            rows="6"
+                            placeholder="Enter your prompt here..."
+                            class="input-field"
+                        ></textarea>
+
+                        <label>Context Files:</label>
+                        <div id="selectedFiles" class="selected-files">
+                            <div class="empty-state-small">No files selected</div>
+                        </div>
+
+                        <div class="button-group">
+                            <button id="runPromptBtn" class="btn-primary">Run Prompt</button>
+                            <button id="saveAsPromptBtn" class="btn-secondary">Save As...</button>
+                        </div>
+
+                        <div id="promptStatus" class="status-message"></div>
+                    </div>
+
+                    <div class="help-text">
+                        <h3>How to use:</h3>
+                        <ol>
+                            <li>Select files with Ctrl+click in the Files panel</li>
+                            <li>Enter an artifact name</li>
+                            <li>Write your prompt</li>
+                            <li>Click "Run Prompt" or "Save As..." to save for reuse</li>
+                        </ol>
+                    </div>
                 </div>
             </aside>
+        </div>
+    </div>
+
+    <!-- Modal for Creating/Editing Prompts -->
+    <div id="promptModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">New Prompt</h2>
+                <button class="modal-close" onclick="closePromptModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <label for="modalPromptName">Prompt Name:</label>
+                <input
+                    type="text"
+                    id="modalPromptName"
+                    placeholder="e.g., extract-summary, technical-analysis"
+                    class="input-field"
+                >
+
+                <label for="modalPromptDescription">Description:</label>
+                <input
+                    type="text"
+                    id="modalPromptDescription"
+                    placeholder="Brief description of what this prompt does"
+                    class="input-field"
+                >
+
+                <label for="modalPromptCategory">Category:</label>
+                <select id="modalPromptCategory" class="input-field">
+                    <option value="user">User</option>
+                    <option value="analysis">Analysis</option>
+                    <option value="technical">Technical</option>
+                    <option value="transcription">Transcription</option>
+                </select>
+
+                <label for="modalPromptContent">Prompt Content:</label>
+                <textarea
+                    id="modalPromptContent"
+                    rows="10"
+                    placeholder="Enter the prompt text here..."
+                    class="input-field"
+                ></textarea>
+
+                <div id="modalStatus" class="status-message"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="savePromptModalBtn" class="btn-primary">Save Prompt</button>
+                <button onclick="closePromptModal()" class="btn-secondary">Cancel</button>
+            </div>
         </div>
     </div>
 
