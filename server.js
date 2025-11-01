@@ -10,6 +10,8 @@ const PORT = process.env.PORT || 3000;
 const TRANSCRIPTIONS_DIR = process.env.TRANSCRIPTIONS_DIR || './transcriptions';
 const PROMPTS_DIR = process.env.PROMPTS_DIR || './prompts';
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-3-5-haiku-20241022';
+const SYSTEM_PROMPT_SINGLE_CHUNK = process.env.SYSTEM_PROMPT_SINGLE_CHUNK || 'format-single-chunk';
+const SYSTEM_PROMPT_MULTI_CHUNK = process.env.SYSTEM_PROMPT_MULTI_CHUNK || 'format-multi-chunk';
 const CHUNK_SIZE = 100000; // 100KB chunks for long transcriptions
 
 const anthropic = new Anthropic({
@@ -78,19 +80,58 @@ function splitIntoChunks(text, chunkSize) {
   return chunks;
 }
 
-// Format transcription using Claude Haiku
+// Load system prompt from file
+async function loadSystemPrompt(promptName) {
+  try {
+    const files = await fs.readdir(PROMPTS_DIR);
+    const promptFile = files.find(f => f.startsWith(`system_${promptName}_v1_`) && f.endsWith('.txt'));
+
+    if (!promptFile) {
+      throw new Error(`System prompt not found: ${promptName}`);
+    }
+
+    const promptPath = path.join(PROMPTS_DIR, promptFile);
+    const content = await fs.readFile(promptPath, 'utf-8');
+    return content;
+  } catch (error) {
+    console.error(`Error loading system prompt ${promptName}:`, error.message);
+    throw error;
+  }
+}
+
+// Replace placeholders in prompt template
+function fillPromptTemplate(template, replacements) {
+  let result = template;
+  for (const [key, value] of Object.entries(replacements)) {
+    result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
+  }
+  return result;
+}
+
+// Format transcription using Claude with prompts from files
 async function formatTranscription(rawText) {
   const chunks = splitIntoChunks(rawText, CHUNK_SIZE);
   const formattedChunks = [];
 
   console.log(`Formatting transcription in ${chunks.length} chunk(s)...`);
 
+  // Load appropriate prompt template based on chunk count
+  const promptName = chunks.length > 1 ? SYSTEM_PROMPT_MULTI_CHUNK : SYSTEM_PROMPT_SINGLE_CHUNK;
+  const promptTemplate = await loadSystemPrompt(promptName);
+
   for (let i = 0; i < chunks.length; i++) {
     console.log(`Processing chunk ${i + 1}/${chunks.length}...`);
 
+    // Fill in the template with actual values
     const prompt = chunks.length > 1
-      ? `This is chunk ${i + 1} of ${chunks.length} from a job interview transcription. Format this chunk into clean, readable markdown with proper structure. Include speaker labels, timestamps if present, and organize into sections. Maintain the exact content but improve readability.\n\nChunk:\n${chunks[i]}`
-      : `Format this job interview transcription into clean, readable markdown. Include:\n- Proper headers and sections\n- Speaker labels (e.g., Interviewer, Candidate)\n- Timestamps if present\n- Key topics and themes\n- Professional formatting\n\nTranscription:\n${chunks[i]}`;
+      ? fillPromptTemplate(promptTemplate, {
+          chunk_number: (i + 1).toString(),
+          total_chunks: chunks.length.toString(),
+          content: chunks[i]
+        })
+      : fillPromptTemplate(promptTemplate, {
+          content: chunks[i]
+        });
 
     try {
       const message = await anthropic.messages.create({

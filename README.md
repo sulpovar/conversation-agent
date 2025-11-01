@@ -51,8 +51,11 @@ A local web application for managing job interview transcriptions with Claude AI
 - **Metadata files**: `<basename>.meta.json`
 
 ### Prompts
-- **Prompt files**: `prompt_<name>_v<version>_YYYYMMDD_HHMMSS.txt`
-- **Prompt metadata**: `prompt_<name>_v<version>_YYYYMMDD_HHMMSS.meta.json`
+- **User prompt files**: `prompt_<name>_v<version>_YYYYMMDD_HHMMSS.txt`
+- **System prompt files**: `system_<name>_v<version>_YYYYMMDD_HHMMSS.txt`
+- **Prompt metadata**: `<prompt-filename>.meta.json`
+
+**System Prompts** are internal prompts used by the application for automatic transcription formatting. They are not visible in the UI and are configured via environment variables.
 
 ## Usage
 
@@ -127,6 +130,8 @@ Two modes available via tabs:
 ## Features
 
 - **Automatic Formatting**: Raw transcriptions automatically formatted on startup
+- **Configurable Prompts**: All prompts stored as files, no hardcoded prompts in code
+- **System Prompts**: Internal formatting prompts configurable via environment variables
 - **Saved Prompts**: Reusable, versioned prompt templates
 - **Immutable Prompts**: Edit creates new versions, preserves history
 - **Soft Delete**: Deleted prompts hidden but not removed from disk
@@ -135,3 +140,22 @@ Two modes available via tabs:
 - **Multi-file Context**: Select multiple files as prompt context
 - **Artifact Versioning**: Automatic version tracking for all generated files
 - **Metadata Tracking**: Full lineage of prompts, files, timestamps
+
+## Customizing System Prompts
+
+System prompts are used internally for automatic transcription formatting. To customize them:
+
+1. Edit the prompt files in `prompts/`:
+   - `system_format-single-chunk_v1_*.txt` - For single-chunk transcriptions
+   - `system_format-multi-chunk_v1_*.txt` - For multi-chunk transcriptions (large files)
+
+2. Or create new versions and update `.env`:
+   ```
+   SYSTEM_PROMPT_SINGLE_CHUNK=my-custom-format
+   SYSTEM_PROMPT_MULTI_CHUNK=my-custom-multi-format
+   ```
+
+**Prompt Template Variables:**
+- `{content}` - The transcription text
+- `{chunk_number}` - Current chunk number (multi-chunk only)
+- `{total_chunks}` - Total number of chunks (multi-chunk only)
