@@ -113,17 +113,22 @@ function fillPromptTemplate(template, replacements) {
 
 // Format transcription using Claude with prompts from files
 async function formatTranscription(rawText) {
+  const startTime = Date.now();
   const chunks = splitIntoChunks(rawText, CHUNK_SIZE);
   const formattedChunks = [];
 
-  console.log(`Formatting transcription in ${chunks.length} chunk(s)...`);
+  const documentSize = Buffer.byteLength(rawText, 'utf8');
+  console.log(`📄 Document size: ${(documentSize / 1024).toFixed(2)} KB`);
+  console.log(`📦 Formatting transcription in ${chunks.length} chunk(s)...`);
 
   // Load appropriate prompt template based on chunk count
   const promptName = chunks.length > 1 ? SYSTEM_PROMPT_MULTI_CHUNK : SYSTEM_PROMPT_SINGLE_CHUNK;
   const promptTemplate = await loadSystemPrompt(promptName);
 
   for (let i = 0; i < chunks.length; i++) {
-    console.log(`Processing chunk ${i + 1}/${chunks.length}...`);
+    const chunkStartTime = Date.now();
+    const chunkSize = Buffer.byteLength(chunks[i], 'utf8');
+    console.log(`\n🔄 Processing chunk ${i + 1}/${chunks.length} (${(chunkSize / 1024).toFixed(2)} KB)...`);
 
     // Fill in the template with actual values
     const prompt = chunks.length > 1
@@ -137,6 +142,7 @@ async function formatTranscription(rawText) {
         });
 
     try {
+      const apiStartTime = Date.now();
       const message = await anthropic.messages.create({
         model: CLAUDE_MODEL,
         max_tokens: MAX_TOKENS_TRANSCRIPTION,
@@ -146,12 +152,25 @@ async function formatTranscription(rawText) {
         }]
       });
 
+      const apiDuration = Date.now() - apiStartTime;
+      const outputTokens = message.usage?.output_tokens || 0;
+      const inputTokens = message.usage?.input_tokens || 0;
+
       formattedChunks.push(message.content[0].text);
+
+      const chunkDuration = Date.now() - chunkStartTime;
+      console.log(`✅ Chunk ${i + 1} completed in ${(chunkDuration / 1000).toFixed(2)}s (API: ${(apiDuration / 1000).toFixed(2)}s)`);
+      console.log(`   📊 Tokens - Input: ${inputTokens}, Output: ${outputTokens}`);
     } catch (error) {
-      console.error(`Error formatting chunk ${i + 1}:`, error.message);
+      const chunkDuration = Date.now() - chunkStartTime;
+      console.error(`❌ Error formatting chunk ${i + 1} after ${(chunkDuration / 1000).toFixed(2)}s:`, error.message);
       formattedChunks.push(`\n\n## Chunk ${i + 1} (Error formatting)\n\n${chunks[i]}\n\n`);
     }
   }
+
+  const totalDuration = Date.now() - startTime;
+  console.log(`\n⏱️  Total formatting time: ${(totalDuration / 1000).toFixed(2)}s for ${chunks.length} chunk(s)`);
+  console.log(`   Average: ${(totalDuration / chunks.length / 1000).toFixed(2)}s per chunk\n`);
 
   // Combine chunks with section markers if multiple
   if (chunks.length > 1) {
@@ -163,8 +182,19 @@ async function formatTranscription(rawText) {
 // Process raw transcriptions on startup
 async function processRawTranscriptions() {
   try {
+    const startTime = Date.now();
     const files = await fs.readdir(TRANSCRIPTIONS_DIR);
     const rawFiles = files.filter(f => f.startsWith('interview_raw_') && f.endsWith('.txt'));
+
+    if (rawFiles.length === 0) {
+      console.log('ℹ️  No raw transcriptions found to process.');
+      return;
+    }
+
+    console.log(`\n📋 Found ${rawFiles.length} raw transcription(s) to check...`);
+
+    let processedCount = 0;
+    let skippedCount = 0;
 
     for (const rawFile of rawFiles) {
       const { timestamp } = parseFilename(rawFile);
@@ -174,13 +204,15 @@ async function processRawTranscriptions() {
       // Check if formatted version already exists
       try {
         await fs.access(formattedPath);
-        console.log(`✓ Formatted version already exists: ${formattedFile}`);
+        console.log(`   ✓ Already formatted: ${rawFile}`);
+        skippedCount++;
         continue;
       } catch {
         // File doesn't exist, proceed with formatting
       }
 
-      console.log(`📝 Formatting: ${rawFile}`);
+      console.log(`\n📝 Formatting new transcription: ${rawFile}`);
+      const fileStartTime = Date.now();
       const rawPath = path.join(TRANSCRIPTIONS_DIR, rawFile);
       const rawText = await fs.readFile(rawPath, 'utf-8');
 
@@ -197,10 +229,18 @@ async function processRawTranscriptions() {
       };
       await fs.writeFile(metaPath, JSON.stringify(metadata, null, 2), 'utf-8');
 
-      console.log(`✓ Created: ${formattedFile}`);
+      const fileDuration = Date.now() - fileStartTime;
+      console.log(`✅ Created: ${formattedFile} (total: ${(fileDuration / 1000).toFixed(2)}s)`);
+      processedCount++;
     }
+
+    const totalDuration = Date.now() - startTime;
+    console.log(`\n📊 Transcription processing complete:`);
+    console.log(`   ✅ Formatted: ${processedCount}`);
+    console.log(`   ⏭️  Skipped: ${skippedCount}`);
+    console.log(`   ⏱️  Total time: ${(totalDuration / 1000).toFixed(2)}s\n`);
   } catch (error) {
-    console.error('Error processing raw transcriptions:', error);
+    console.error('❌ Error processing raw transcriptions:', error);
   }
 }
 
@@ -293,9 +333,13 @@ app.post('/api/prompt', async (req, res) => {
 
     // Call Claude
     const fullPrompt = `${prompt}\n\n${contextText}`;
+    const promptSize = Buffer.byteLength(fullPrompt, 'utf8');
 
-    console.log(`Running prompt for artifact: ${artifactName} (v${nextVersion})`);
+    console.log(`\n🚀 Running custom prompt for artifact: ${artifactName} (v${nextVersion})`);
+    console.log(`   📄 Prompt size: ${(promptSize / 1024).toFixed(2)} KB`);
+    console.log(`   📎 Context files: ${files?.length || 0}`);
 
+    const startTime = Date.now();
     const message = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: MAX_TOKENS_PROMPT,
@@ -304,6 +348,13 @@ app.post('/api/prompt', async (req, res) => {
         content: fullPrompt
       }]
     });
+
+    const duration = Date.now() - startTime;
+    const outputTokens = message.usage?.output_tokens || 0;
+    const inputTokens = message.usage?.input_tokens || 0;
+
+    console.log(`✅ Prompt completed in ${(duration / 1000).toFixed(2)}s`);
+    console.log(`   📊 Tokens - Input: ${inputTokens}, Output: ${outputTokens}\n`);
 
     const result = message.content[0].text;
 
@@ -654,9 +705,14 @@ app.post('/api/run-saved-prompt', async (req, res) => {
 
     // Call Claude
     const fullPrompt = `${promptContent}\n\n${contextText}`;
+    const promptSize = Buffer.byteLength(fullPrompt, 'utf8');
 
-    console.log(`Running saved prompt for artifact: ${artifactName} (v${nextVersion})`);
+    console.log(`\n🚀 Running saved prompt for artifact: ${artifactName} (v${nextVersion})`);
+    console.log(`   📝 Prompt: ${promptFilename}`);
+    console.log(`   📄 Prompt size: ${(promptSize / 1024).toFixed(2)} KB`);
+    console.log(`   📎 Context files: ${files?.length || 0}`);
 
+    const startTime = Date.now();
     const message = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: MAX_TOKENS_PROMPT,
@@ -665,6 +721,13 @@ app.post('/api/run-saved-prompt', async (req, res) => {
         content: fullPrompt
       }]
     });
+
+    const duration = Date.now() - startTime;
+    const outputTokens = message.usage?.output_tokens || 0;
+    const inputTokens = message.usage?.input_tokens || 0;
+
+    console.log(`✅ Prompt completed in ${(duration / 1000).toFixed(2)}s`);
+    console.log(`   📊 Tokens - Input: ${inputTokens}, Output: ${outputTokens}\n`);
 
     const result = message.content[0].text;
 
