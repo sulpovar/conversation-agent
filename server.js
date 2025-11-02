@@ -12,14 +12,17 @@ const PROMPTS_DIR = process.env.PROMPTS_DIR || './prompts';
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-3-5-haiku-20241022';
 const SYSTEM_PROMPT_SINGLE_CHUNK = process.env.SYSTEM_PROMPT_SINGLE_CHUNK || 'format-single-chunk';
 const SYSTEM_PROMPT_MULTI_CHUNK = process.env.SYSTEM_PROMPT_MULTI_CHUNK || 'format-multi-chunk';
-const CHUNK_SIZE = 100000; // 100KB chunks for long transcriptions
+const CHUNK_SIZE = parseInt(process.env.CHUNK_SIZE || '100000');
+const REQUEST_SIZE_LIMIT = process.env.REQUEST_SIZE_LIMIT || '50mb';
+const MAX_TOKENS_TRANSCRIPTION = parseInt(process.env.MAX_TOKENS_TRANSCRIPTION || '4096');
+const MAX_TOKENS_PROMPT = parseInt(process.env.MAX_TOKENS_PROMPT || '8192');
 
 const anthropic = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY,
 });
 
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: REQUEST_SIZE_LIMIT }));
 app.use(express.static('public'));
 
 // Ensure transcriptions and prompts directories exist
@@ -136,7 +139,7 @@ async function formatTranscription(rawText) {
     try {
       const message = await anthropic.messages.create({
         model: CLAUDE_MODEL,
-        max_tokens: 4096,
+        max_tokens: MAX_TOKENS_TRANSCRIPTION,
         messages: [{
           role: 'user',
           content: prompt
@@ -295,7 +298,7 @@ app.post('/api/prompt', async (req, res) => {
 
     const message = await anthropic.messages.create({
       model: CLAUDE_MODEL,
-      max_tokens: 8192,
+      max_tokens: MAX_TOKENS_PROMPT,
       messages: [{
         role: 'user',
         content: fullPrompt
@@ -656,7 +659,7 @@ app.post('/api/run-saved-prompt', async (req, res) => {
 
     const message = await anthropic.messages.create({
       model: CLAUDE_MODEL,
-      max_tokens: 8192,
+      max_tokens: MAX_TOKENS_PROMPT,
       messages: [{
         role: 'user',
         content: fullPrompt
