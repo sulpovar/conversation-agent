@@ -16,6 +16,7 @@ const CHUNK_SIZE = parseInt(process.env.CHUNK_SIZE || '100000');
 const REQUEST_SIZE_LIMIT = process.env.REQUEST_SIZE_LIMIT || '50mb';
 const MAX_TOKENS_TRANSCRIPTION = parseInt(process.env.MAX_TOKENS_TRANSCRIPTION || '4096');
 const MAX_TOKENS_PROMPT = parseInt(process.env.MAX_TOKENS_PROMPT || '8192');
+const DEBUG_WRITE_CHUNKS = process.env.DEBUG_WRITE_CHUNKS === 'true';
 
 const anthropic = new Anthropic({
   apiKey: process.env.CLAUDE_API_KEY,
@@ -172,10 +173,49 @@ async function formatTranscription(rawText) {
   console.log(`\n⏱️  Total formatting time: ${(totalDuration / 1000).toFixed(2)}s for ${chunks.length} chunk(s)`);
   console.log(`   Average: ${(totalDuration / chunks.length / 1000).toFixed(2)}s per chunk\n`);
 
+  // Verify all chunks were processed
+  if (formattedChunks.length !== chunks.length) {
+    console.warn(`⚠️  Warning: Expected ${chunks.length} formatted chunks but got ${formattedChunks.length}`);
+  } else {
+    console.log(`✅ All ${chunks.length} chunk(s) successfully formatted`);
+  }
+
   // Combine chunks with section markers if multiple
   if (chunks.length > 1) {
-    return formattedChunks.join('\n\n---\n\n');
+    console.log(`\n📊 Chunk size comparison:`);
+    for (let i = 0; i < chunks.length; i++) {
+      const originalSize = Buffer.byteLength(chunks[i], 'utf8');
+      const formattedSize = formattedChunks[i] ? Buffer.byteLength(formattedChunks[i], 'utf8') : 0;
+      console.log(`   Chunk ${i + 1}: Original ${(originalSize / 1024).toFixed(2)} KB → Formatted ${(formattedSize / 1024).toFixed(2)} KB`);
+
+      // Write chunks to debug files if enabled
+      if (DEBUG_WRITE_CHUNKS) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const originalChunkPath = path.join(TRANSCRIPTIONS_DIR, `debug_chunk_${i + 1}_original_${timestamp}.txt`);
+        const formattedChunkPath = path.join(TRANSCRIPTIONS_DIR, `debug_chunk_${i + 1}_formatted_${timestamp}.txt`);
+
+        try {
+          fs.writeFile(originalChunkPath, chunks[i], 'utf8');
+          if (formattedChunks[i]) {
+            fs.writeFile(formattedChunkPath, formattedChunks[i], 'utf8');
+          }
+          console.log(`   📝 Written: debug_chunk_${i + 1}_original_${timestamp}.txt & debug_chunk_${i + 1}_formatted_${timestamp}.txt`);
+        } catch (error) {
+          console.error(`   ❌ Error writing chunk ${i + 1} debug files:`, error.message);
+        }
+      }
+    }
+
+    const combined = formattedChunks.join('\n\n---\n\n');
+    const inputSize = Buffer.byteLength(rawText, 'utf8');
+    const outputSize = Buffer.byteLength(combined, 'utf8');
+    console.log(`📋 Combined result: ${(outputSize / 1024).toFixed(2)} KB (from ${(inputSize / 1024).toFixed(2)} KB input)\n`);
+    return combined;
   }
+
+  const inputSize = Buffer.byteLength(rawText, 'utf8');
+  const outputSize = Buffer.byteLength(formattedChunks[0], 'utf8');
+  console.log(`📋 Result: ${(outputSize / 1024).toFixed(2)} KB (from ${(inputSize / 1024).toFixed(2)} KB input)\n`);
   return formattedChunks[0];
 }
 

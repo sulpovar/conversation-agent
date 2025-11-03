@@ -18,29 +18,12 @@ body {
     flex-direction: column;
 }
 
-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 1.5rem 2rem;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-header h1 {
-    font-size: 1.75rem;
-    margin-bottom: 0.25rem;
-}
-
-.subtitle {
-    font-size: 0.9rem;
-    opacity: 0.9;
-}
-
 .main-content {
     display: grid;
     grid-template-columns: 300px 1fr 350px;
     gap: 1rem;
     padding: 1rem;
-    height: calc(100vh - 120px);
+    height: 100vh;
     overflow: hidden;
 }
 
