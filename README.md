@@ -159,3 +159,39 @@ System prompts are used internally for automatic transcription formatting. To cu
 - `{content}` - The transcription text
 - `{chunk_number}` - Current chunk number (multi-chunk only)
 - `{total_chunks}` - Total number of chunks (multi-chunk only)
+- `{overlap_before}` - Context from previous chunk (multi-chunk only)
+- `{overlap_after}` - Context from next chunk (multi-chunk only)
+
+## Intelligent Chunk Processing
+
+Large transcriptions are automatically split into manageable chunks using a hybrid approach that ensures high fidelity:
+
+**Smart Boundary Detection:**
+- Files are split at natural conversation boundaries rather than arbitrary character counts
+- Priority order for splits:
+  1. Paragraph breaks (double newlines)
+  2. Speaker changes (e.g., "Interviewer:", "Candidate:")
+  3. Timestamp markers
+  4. Sentence endings
+  5. Single newlines
+- Searches within ±5000 characters of target chunk size for best split point
+
+**Context Overlap:**
+- Each chunk receives 1000 characters of context from adjacent chunks
+- Claude uses this context to maintain conversation flow and formatting consistency
+- Overlap is for context only - not included in final output
+- Configurable via `OVERLAP_SIZE` in `.env`
+
+**Benefits:**
+- No mid-sentence splits
+- Preserved speaker turns and timestamps
+- Natural conversation flow across chunk boundaries
+- High formatting consistency throughout document
+- Minimal data loss risk
+
+**Configuration:**
+```
+CHUNK_SIZE=100000        # Target size for each chunk
+OVERLAP_SIZE=1000        # Context overlap between chunks
+DEBUG_WRITE_CHUNKS=true  # Write debug files to inspect each chunk
+```

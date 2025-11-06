@@ -13,6 +13,7 @@ const CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'claude-3-5-haiku-20241022';
 const SYSTEM_PROMPT_SINGLE_CHUNK = process.env.SYSTEM_PROMPT_SINGLE_CHUNK || 'format-single-chunk';
 const SYSTEM_PROMPT_MULTI_CHUNK = process.env.SYSTEM_PROMPT_MULTI_CHUNK || 'format-multi-chunk';
 const CHUNK_SIZE = parseInt(process.env.CHUNK_SIZE || '100000');
+const OVERLAP_SIZE = parseInt(process.env.OVERLAP_SIZE || '1000');
 const REQUEST_SIZE_LIMIT = process.env.REQUEST_SIZE_LIMIT || '50mb';
 const MAX_TOKENS_TRANSCRIPTION = parseInt(process.env.MAX_TOKENS_TRANSCRIPTION || '4096');
 const MAX_TOKENS_PROMPT = parseInt(process.env.MAX_TOKENS_PROMPT || '8192');
@@ -75,13 +76,102 @@ function parseFilename(filename) {
   return { type, timestamp, version, name };
 }
 
-// Split text into chunks
-function splitIntoChunks(text, chunkSize) {
+// Split text into chunks at intelligent boundaries
+function splitIntoChunks(text, targetChunkSize) {
   const chunks = [];
-  for (let i = 0; i < text.length; i += chunkSize) {
-    chunks.push(text.slice(i, i + chunkSize));
+  const boundaryInfo = []; // Track where splits occurred
+  let position = 0;
+
+  console.log(`\n🔍 Starting intelligent chunking (target size: ${(targetChunkSize / 1024).toFixed(2)} KB)...`);
+
+  while (position < text.length) {
+    let chunkEnd = position + targetChunkSize;
+
+    // Last chunk - take everything remaining
+    if (chunkEnd >= text.length) {
+      const finalChunk = text.slice(position);
+      chunks.push(finalChunk);
+      boundaryInfo.push({
+        start: position,
+        end: text.length,
+        type: 'end',
+        size: finalChunk.length
+      });
+      console.log(`   Final chunk: ${position} → ${text.length} (${(finalChunk.length / 1024).toFixed(2)} KB, type: end)`);
+      break;
+    }
+
+    // Search for natural boundaries within window (±5000 chars from target)
+    const windowSize = 5000;
+    const searchStart = Math.max(position, chunkEnd - windowSize);
+    const searchEnd = Math.min(chunkEnd + windowSize, text.length);
+    const searchWindow = text.slice(searchStart, searchEnd);
+    const windowOffset = searchStart;
+
+    // Define boundary patterns in priority order
+    const boundaries = [
+      { pattern: /\n\n+/g, priority: 1, name: 'paragraph' },
+      { pattern: /\n(?=[A-Z][a-z]*:)/g, priority: 2, name: 'speaker' },
+      { pattern: /\n(?=\[\d{2}:\d{2})/g, priority: 3, name: 'timestamp' },
+      { pattern: /[.!?]\s*\n/g, priority: 4, name: 'sentence' },
+      { pattern: /\n/g, priority: 5, name: 'line' }
+    ];
+
+    let bestSplit = null;
+    let bestPriority = Infinity;
+    let bestBoundaryType = 'hard';
+
+    // Find best boundary within each priority level
+    for (const {pattern, priority, name} of boundaries) {
+      const matches = [...searchWindow.matchAll(pattern)];
+      if (matches.length > 0 && priority < bestPriority) {
+        // Find match closest to target position
+        const targetOffset = chunkEnd - windowOffset;
+        const closest = matches.reduce((best, match) => {
+          const distance = Math.abs(match.index - targetOffset);
+          const bestDistance = Math.abs(best.index - targetOffset);
+          return distance < bestDistance ? match : best;
+        });
+
+        bestSplit = windowOffset + closest.index + closest[0].length;
+        bestPriority = priority;
+        bestBoundaryType = name;
+      }
+    }
+
+    // Use best split or fall back to hard boundary
+    const actualEnd = bestSplit || chunkEnd;
+    const chunkText = text.slice(position, actualEnd);
+
+    // Verify we're not creating empty chunks
+    if (chunkText.length === 0) {
+      console.error(`⚠️  Error: Empty chunk detected at position ${position}`);
+      break;
+    }
+
+    chunks.push(chunkText);
+
+    boundaryInfo.push({
+      start: position,
+      end: actualEnd,
+      type: bestBoundaryType,
+      size: chunkText.length
+    });
+
+    console.log(`   Chunk ${chunks.length}: ${position} → ${actualEnd} (${(chunkText.length / 1024).toFixed(2)} KB, type: ${bestBoundaryType})`);
+
+    position = actualEnd;
   }
-  return chunks;
+
+  // Verify no data loss
+  const totalChunkSize = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  if (totalChunkSize !== text.length) {
+    console.error(`❌ DATA LOSS DETECTED: Original ${text.length} chars, chunks total ${totalChunkSize} chars`);
+  } else {
+    console.log(`✅ Chunking complete: ${chunks.length} chunks, ${text.length} chars preserved\n`);
+  }
+
+  return { chunks, boundaryInfo };
 }
 
 // Load system prompt from file
@@ -115,12 +205,20 @@ function fillPromptTemplate(template, replacements) {
 // Format transcription using Claude with prompts from files
 async function formatTranscription(rawText) {
   const startTime = Date.now();
-  const chunks = splitIntoChunks(rawText, CHUNK_SIZE);
+  const { chunks, boundaryInfo } = splitIntoChunks(rawText, CHUNK_SIZE);
   const formattedChunks = [];
 
   const documentSize = Buffer.byteLength(rawText, 'utf8');
   console.log(`📄 Document size: ${(documentSize / 1024).toFixed(2)} KB`);
   console.log(`📦 Formatting transcription in ${chunks.length} chunk(s)...`);
+
+  // Log boundary information
+  if (chunks.length > 1) {
+    console.log(`\n📍 Chunk boundaries:`);
+    boundaryInfo.forEach((info, idx) => {
+      console.log(`   Chunk ${idx + 1}: ${(info.size / 1024).toFixed(2)} KB, split type: ${info.type}`);
+    });
+  }
 
   // Load appropriate prompt template based on chunk count
   const promptName = chunks.length > 1 ? SYSTEM_PROMPT_MULTI_CHUNK : SYSTEM_PROMPT_SINGLE_CHUNK;
@@ -131,12 +229,32 @@ async function formatTranscription(rawText) {
     const chunkSize = Buffer.byteLength(chunks[i], 'utf8');
     console.log(`\n🔄 Processing chunk ${i + 1}/${chunks.length} (${(chunkSize / 1024).toFixed(2)} KB)...`);
 
+    // Extract overlap context from adjacent chunks
+    let overlapBefore = '';
+    let overlapAfter = '';
+
+    if (chunks.length > 1) {
+      // Get last OVERLAP_SIZE chars from previous chunk
+      if (i > 0) {
+        const prevChunk = chunks[i - 1];
+        overlapBefore = prevChunk.slice(-OVERLAP_SIZE);
+      }
+
+      // Get first OVERLAP_SIZE chars from next chunk
+      if (i < chunks.length - 1) {
+        const nextChunk = chunks[i + 1];
+        overlapAfter = nextChunk.slice(0, OVERLAP_SIZE);
+      }
+    }
+
     // Fill in the template with actual values
     const prompt = chunks.length > 1
       ? fillPromptTemplate(promptTemplate, {
           chunk_number: (i + 1).toString(),
           total_chunks: chunks.length.toString(),
-          content: chunks[i]
+          overlap_before: overlapBefore,
+          content: chunks[i],
+          overlap_after: overlapAfter
         })
       : fillPromptTemplate(promptTemplate, {
           content: chunks[i]
@@ -157,15 +275,53 @@ async function formatTranscription(rawText) {
       const outputTokens = message.usage?.output_tokens || 0;
       const inputTokens = message.usage?.input_tokens || 0;
 
-      formattedChunks.push(message.content[0].text);
+      const formattedText = message.content[0].text;
+      formattedChunks.push(formattedText);
 
       const chunkDuration = Date.now() - chunkStartTime;
       console.log(`✅ Chunk ${i + 1} completed in ${(chunkDuration / 1000).toFixed(2)}s (API: ${(apiDuration / 1000).toFixed(2)}s)`);
       console.log(`   📊 Tokens - Input: ${inputTokens}, Output: ${outputTokens}`);
+
+      // Write debug files immediately after formatting if enabled
+      if (DEBUG_WRITE_CHUNKS) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const originalChunkPath = path.join(TRANSCRIPTIONS_DIR, `debug_chunk_${i + 1}_original_${timestamp}.txt`);
+        const formattedChunkPath = path.join(TRANSCRIPTIONS_DIR, `debug_chunk_${i + 1}_formatted_${timestamp}.txt`);
+
+        try {
+          await fs.writeFile(originalChunkPath, chunks[i], 'utf8');
+          await fs.writeFile(formattedChunkPath, formattedText, 'utf8');
+          console.log(`   📝 Written debug files: debug_chunk_${i + 1}_*.txt`);
+        } catch (writeError) {
+          console.error(`   ❌ Error writing chunk ${i + 1} debug files:`, writeError.message);
+        }
+      }
+
+      // Log size comparison
+      const originalSize = Buffer.byteLength(chunks[i], 'utf8');
+      const formattedSize = Buffer.byteLength(formattedText, 'utf8');
+      console.log(`   📏 Size: ${(originalSize / 1024).toFixed(2)} KB → ${(formattedSize / 1024).toFixed(2)} KB`);
+
     } catch (error) {
       const chunkDuration = Date.now() - chunkStartTime;
       console.error(`❌ Error formatting chunk ${i + 1} after ${(chunkDuration / 1000).toFixed(2)}s:`, error.message);
-      formattedChunks.push(`\n\n## Chunk ${i + 1} (Error formatting)\n\n${chunks[i]}\n\n`);
+      const errorText = `\n\n## Chunk ${i + 1} (Error formatting)\n\n${chunks[i]}\n\n`;
+      formattedChunks.push(errorText);
+
+      // Write debug files even for errors
+      if (DEBUG_WRITE_CHUNKS) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const originalChunkPath = path.join(TRANSCRIPTIONS_DIR, `debug_chunk_${i + 1}_original_${timestamp}.txt`);
+        const errorChunkPath = path.join(TRANSCRIPTIONS_DIR, `debug_chunk_${i + 1}_ERROR_${timestamp}.txt`);
+
+        try {
+          await fs.writeFile(originalChunkPath, chunks[i], 'utf8');
+          await fs.writeFile(errorChunkPath, errorText, 'utf8');
+          console.log(`   📝 Written debug files (with error): debug_chunk_${i + 1}_*.txt`);
+        } catch (writeError) {
+          console.error(`   ❌ Error writing error chunk ${i + 1} debug files:`, writeError.message);
+        }
+      }
     }
   }
 
@@ -182,30 +338,6 @@ async function formatTranscription(rawText) {
 
   // Combine chunks with section markers if multiple
   if (chunks.length > 1) {
-    console.log(`\n📊 Chunk size comparison:`);
-    for (let i = 0; i < chunks.length; i++) {
-      const originalSize = Buffer.byteLength(chunks[i], 'utf8');
-      const formattedSize = formattedChunks[i] ? Buffer.byteLength(formattedChunks[i], 'utf8') : 0;
-      console.log(`   Chunk ${i + 1}: Original ${(originalSize / 1024).toFixed(2)} KB → Formatted ${(formattedSize / 1024).toFixed(2)} KB`);
-
-      // Write chunks to debug files if enabled
-      if (DEBUG_WRITE_CHUNKS) {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-        const originalChunkPath = path.join(TRANSCRIPTIONS_DIR, `debug_chunk_${i + 1}_original_${timestamp}.txt`);
-        const formattedChunkPath = path.join(TRANSCRIPTIONS_DIR, `debug_chunk_${i + 1}_formatted_${timestamp}.txt`);
-
-        try {
-          fs.writeFile(originalChunkPath, chunks[i], 'utf8');
-          if (formattedChunks[i]) {
-            fs.writeFile(formattedChunkPath, formattedChunks[i], 'utf8');
-          }
-          console.log(`   📝 Written: debug_chunk_${i + 1}_original_${timestamp}.txt & debug_chunk_${i + 1}_formatted_${timestamp}.txt`);
-        } catch (error) {
-          console.error(`   ❌ Error writing chunk ${i + 1} debug files:`, error.message);
-        }
-      }
-    }
-
     const combined = formattedChunks.join('\n\n---\n\n');
     const inputSize = Buffer.byteLength(rawText, 'utf8');
     const outputSize = Buffer.byteLength(combined, 'utf8');
