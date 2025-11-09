@@ -736,6 +736,76 @@ textarea.input-field {
     justify-content: flex-end;
 }
 
+/* Topics Selection UI */
+.topics-panel {
+    background: #f9f9f9;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+}
+
+.topics-header {
+    margin-bottom: 0.75rem;
+}
+
+.topics-header h3 {
+    font-size: 0.95rem;
+    color: #333;
+    margin-bottom: 0.25rem;
+}
+
+.topics-header p {
+    font-size: 0.8rem;
+    color: #666;
+    margin: 0;
+}
+
+.topics-list {
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 0;
+}
+
+.topic-item {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem;
+    margin-bottom: 0.25rem;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.2s;
+}
+
+.topic-item:hover {
+    background: #fff;
+}
+
+.topic-item input[type="checkbox"] {
+    margin-right: 0.75rem;
+    cursor: pointer;
+}
+
+.topic-title {
+    font-size: 0.85rem;
+    color: #333;
+    flex: 1;
+}
+
+.topics-actions {
+    display: flex;
+    gap: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid #e0e0e0;
+}
+
+.selected-file-topics {
+    font-size: 0.75rem;
+    color: #667eea;
+    margin-top: 0.25rem;
+}
+
 /* Responsive */
 @media (max-width: 1200px) {
     .main-content {

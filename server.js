@@ -76,6 +76,65 @@ function parseFilename(filename) {
   return { type, timestamp, version, name };
 }
 
+// Parse markdown content to extract topics by ## headers
+function parseTopics(markdownContent) {
+  const topics = [];
+  const lines = markdownContent.split('\n');
+  let currentTopic = null;
+  let currentContent = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Check if this is a ## header (level 2)
+    if (line.startsWith('## ')) {
+      // Save previous topic if exists
+      if (currentTopic) {
+        topics.push({
+          ...currentTopic,
+          content: currentContent.join('\n').trim()
+        });
+      }
+
+      // Start new topic
+      const title = line.substring(3).trim();
+      currentTopic = {
+        title,
+        id: title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        startLine: i + 1
+      };
+      currentContent = [line]; // Include the header in content
+    } else if (currentTopic) {
+      // Add line to current topic
+      currentContent.push(line);
+    } else {
+      // Content before first topic (e.g., title, intro)
+      if (!topics.length && line.trim()) {
+        // Create a "preamble" topic for content before first ##
+        if (!currentTopic) {
+          currentTopic = {
+            title: 'Introduction',
+            id: 'introduction',
+            startLine: 1
+          };
+          currentContent = [];
+        }
+        currentContent.push(line);
+      }
+    }
+  }
+
+  // Save last topic
+  if (currentTopic) {
+    topics.push({
+      ...currentTopic,
+      content: currentContent.join('\n').trim()
+    });
+  }
+
+  return topics;
+}
+
 // Split text into chunks at intelligent boundaries
 function splitIntoChunks(text, targetChunkSize) {
   const chunks = [];
@@ -471,6 +530,27 @@ app.get('/api/files/:filename', async (req, res) => {
   }
 });
 
+// API: Get topics from a formatted interview
+app.get('/api/files/:filename/topics', async (req, res) => {
+  try {
+    const { filename } = req.params;
+
+    // Only allow formatted interviews and artifacts (markdown files)
+    if (!filename.endsWith('.md')) {
+      return res.status(400).json({ error: 'Topics can only be extracted from markdown files' });
+    }
+
+    const filePath = path.join(TRANSCRIPTIONS_DIR, filename);
+    const content = await fs.readFile(filePath, 'utf-8');
+    const topics = parseTopics(content);
+
+    res.json({ topics });
+  } catch (error) {
+    console.error('Error extracting topics:', error);
+    res.status(500).json({ error: 'Failed to extract topics' });
+  }
+});
+
 // API: Run prompt with files
 app.post('/api/prompt', async (req, res) => {
   try {
@@ -480,14 +560,35 @@ app.post('/api/prompt', async (req, res) => {
       return res.status(400).json({ error: 'Prompt and artifact name are required' });
     }
 
-    // Read file contents
+    // Read file contents with optional topic selection
     let contextText = '';
     if (files && files.length > 0) {
       const fileContents = await Promise.all(
-        files.map(async (filename) => {
+        files.map(async (fileSpec) => {
+          // Support both string filename and object with topicIds
+          const filename = typeof fileSpec === 'string' ? fileSpec : fileSpec.file;
+          const topicIds = typeof fileSpec === 'object' ? fileSpec.topicIds : null;
+
           const filePath = path.join(TRANSCRIPTIONS_DIR, filename);
           const content = await fs.readFile(filePath, 'utf-8');
-          return `\n\n--- File: ${filename} ---\n\n${content}`;
+
+          // If topics are specified and this is a markdown file, extract only those topics
+          if (topicIds && topicIds.length > 0 && filename.endsWith('.md')) {
+            const topics = parseTopics(content);
+            const selectedTopics = topics.filter(t => topicIds.includes(t.id));
+
+            if (selectedTopics.length > 0) {
+              const topicContent = selectedTopics.map(t => t.content).join('\n\n');
+              const topicNames = selectedTopics.map(t => t.title).join(', ');
+              return `\n\n--- File: ${filename} (Topics: ${topicNames}) ---\n\n${topicContent}`;
+            } else {
+              // If no topics matched, fall back to full file
+              return `\n\n--- File: ${filename} ---\n\n${content}`;
+            }
+          } else {
+            // Use full file content
+            return `\n\n--- File: ${filename} ---\n\n${content}`;
+          }
         })
       );
       contextText = fileContents.join('\n\n');
@@ -852,14 +953,35 @@ app.post('/api/run-saved-prompt', async (req, res) => {
     const promptPath = path.join(PROMPTS_DIR, promptFilename);
     const promptContent = await fs.readFile(promptPath, 'utf-8');
 
-    // Read file contents
+    // Read file contents with optional topic selection
     let contextText = '';
     if (files && files.length > 0) {
       const fileContents = await Promise.all(
-        files.map(async (filename) => {
+        files.map(async (fileSpec) => {
+          // Support both string filename and object with topicIds
+          const filename = typeof fileSpec === 'string' ? fileSpec : fileSpec.file;
+          const topicIds = typeof fileSpec === 'object' ? fileSpec.topicIds : null;
+
           const filePath = path.join(TRANSCRIPTIONS_DIR, filename);
           const content = await fs.readFile(filePath, 'utf-8');
-          return `\n\n--- File: ${filename} ---\n\n${content}`;
+
+          // If topics are specified and this is a markdown file, extract only those topics
+          if (topicIds && topicIds.length > 0 && filename.endsWith('.md')) {
+            const topics = parseTopics(content);
+            const selectedTopics = topics.filter(t => topicIds.includes(t.id));
+
+            if (selectedTopics.length > 0) {
+              const topicContent = selectedTopics.map(t => t.content).join('\n\n');
+              const topicNames = selectedTopics.map(t => t.title).join(', ');
+              return `\n\n--- File: ${filename} (Topics: ${topicNames}) ---\n\n${topicContent}`;
+            } else {
+              // If no topics matched, fall back to full file
+              return `\n\n--- File: ${filename} ---\n\n${content}`;
+            }
+          } else {
+            // Use full file content
+            return `\n\n--- File: ${filename} ---\n\n${content}`;
+          }
         })
       );
       contextText = fileContents.join('\n\n');

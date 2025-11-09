@@ -3,8 +3,7 @@ const API_BASE = 'http://localhost:3000/api';
 // State
 let allFiles = [];
 let allPrompts = [];
-let selectedFiles = new Map(); // Changed from Set to Map for topic support
-let fileTopics = new Map(); // Cache of filename -> topics array
+let selectedFiles = new Set();
 let currentFile = null;
 let currentPrompt = null;
 let currentFilter = 'all';
@@ -105,16 +104,10 @@ function renderFileList() {
 
 async function handleFileClick(filename, event) {
     if (event.ctrlKey || event.metaKey) {
-        // Toggle selection - use Map.has() which works for both Set and Map
         if (selectedFiles.has(filename)) {
             selectedFiles.delete(filename);
         } else {
-            // For Map, set with empty object to indicate whole file selection
-            if (selectedFiles instanceof Map) {
-                selectedFiles.set(filename, { topics: [] });
-            } else {
-                selectedFiles.add(filename);
-            }
+            selectedFiles.add(filename);
         }
         renderFileList();
         renderSelectedFiles();
@@ -140,7 +133,7 @@ async function viewFile(filename) {
     }
 }
 
-async function renderFileViewer() {
+function renderFileViewer() {
     const viewerEl = document.getElementById('fileViewer');
 
     if (!currentFile || !currentFile.content) {
@@ -148,27 +141,16 @@ async function renderFileViewer() {
         return;
     }
 
-    let contentHtml = '';
-
     if (viewMode === 'raw') {
         viewerEl.className = 'file-viewer raw-view';
         viewerEl.textContent = currentFile.content;
-        return;
     } else {
         viewerEl.className = 'file-viewer';
         if (currentFile.filename.endsWith('.md')) {
-            contentHtml = marked.parse(currentFile.content);
+            viewerEl.innerHTML = marked.parse(currentFile.content);
         } else {
-            contentHtml = `<pre>${escapeHtml(currentFile.content)}</pre>`;
+            viewerEl.innerHTML = `<pre>${escapeHtml(currentFile.content)}</pre>`;
         }
-    }
-
-    // Add topics UI for markdown files
-    const topicsUI = await renderTopicsUI(currentFile.filename);
-    if (topicsUI) {
-        viewerEl.innerHTML = topicsUI + contentHtml;
-    } else {
-        viewerEl.innerHTML = contentHtml;
     }
 }
 
@@ -191,34 +173,12 @@ function renderSelectedFilesFor(elementId) {
         return;
     }
 
-    let html = '';
-
-    // Handle both Set and Map structures
-    if (selectedFiles instanceof Map) {
-        selectedFiles.forEach((selection, filename) => {
-            const topics = selection.topics || [];
-            const topicInfo = topics.length > 0
-                ? `<div class="selected-file-topics">${topics.length} topic(s) selected</div>`
-                : '';
-            html += `
-                <div class="selected-file-item">
-                    <span class="selected-file-name">${filename}</span>
-                    ${topicInfo}
-                    <button class="remove-file-btn" onclick="removeSelectedFile('${filename}')">&times;</button>
-                </div>
-            `;
-        });
-    } else {
-        // Fallback for Set structure
-        html = Array.from(selectedFiles).map(filename => `
-            <div class="selected-file-item">
-                <span class="selected-file-name">${filename}</span>
-                <button class="remove-file-btn" onclick="removeSelectedFile('${filename}')">&times;</button>
-            </div>
-        `).join('');
-    }
-
-    el.innerHTML = html;
+    el.innerHTML = Array.from(selectedFiles).map(filename => `
+        <div class="selected-file-item">
+            <span class="selected-file-name">${filename}</span>
+            <button class="remove-file-btn" onclick="removeSelectedFile('${filename}')">&times;</button>
+        </div>
+    `).join('');
 }
 
 function removeSelectedFile(filename) {
@@ -347,7 +307,7 @@ async function runCustomPrompt() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 prompt: promptText,
-                files: getSelectedFilesForAPI(),
+                files: Array.from(selectedFiles),
                 artifactName: artifactName
             })
         });
@@ -401,7 +361,7 @@ async function runSavedPrompt() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 promptFilename: currentPrompt.filename,
-                files: getSelectedFilesForAPI(),
+                files: Array.from(selectedFiles),
                 artifactName: artifactName
             })
         });
