@@ -20,6 +20,25 @@ const MAX_TOKENS_TRANSCRIPTION = parseInt(process.env.MAX_TOKENS_TRANSCRIPTION |
 const MAX_TOKENS_PROMPT = parseInt(process.env.MAX_TOKENS_PROMPT || '8192');
 const DEBUG_WRITE_CHUNKS = process.env.DEBUG_WRITE_CHUNKS === 'true';
 
+// LangSmith Configuration
+const LANGSMITH_TRACING = process.env.LANGSMITH_TRACING === 'true';
+const LANGSMITH_API_KEY = process.env.LANGSMITH_API_KEY;
+const LANGSMITH_PROJECT = process.env.LANGSMITH_PROJECT || 'interview-transcription-manager';
+const LANGSMITH_ENDPOINT = process.env.LANGSMITH_ENDPOINT || 'https://api.smith.langchain.com';
+
+// Configure LangSmith if enabled
+if (LANGSMITH_TRACING) {
+  if (!LANGSMITH_API_KEY) {
+    console.warn('⚠️  LANGSMITH_TRACING is enabled but LANGSMITH_API_KEY is not set. Tracing will not work.');
+  } else {
+    process.env.LANGCHAIN_TRACING_V2 = 'true';
+    process.env.LANGCHAIN_API_KEY = LANGSMITH_API_KEY;
+    process.env.LANGCHAIN_PROJECT = LANGSMITH_PROJECT;
+    process.env.LANGCHAIN_ENDPOINT = LANGSMITH_ENDPOINT;
+    console.log(`📊 LangSmith tracing enabled for project: ${LANGSMITH_PROJECT}`);
+  }
+}
+
 // Agent type constants
 const FLOW_PREFIX = 'flow_';
 const PROMPT_PREFIX = 'prompt_';
@@ -1603,8 +1622,15 @@ async function startServer() {
     console.log(`\n🚀 Server running at http://localhost:${PORT}`);
     console.log(`📁 Transcriptions directory: ${TRANSCRIPTIONS_DIR}`);
     console.log(`📝 Prompts directory: ${PROMPTS_DIR}`);
-    console.log(`🤖 Claude model: ${CLAUDE_MODEL}\n`);
-    console.log(`ℹ️  Raw transcriptions will not be formatted automatically.`);
+    console.log(`🤖 Claude model: ${CLAUDE_MODEL}`);
+
+    if (LANGSMITH_TRACING && LANGSMITH_API_KEY) {
+      console.log(`📊 LangSmith tracing: enabled (project: ${LANGSMITH_PROJECT})`);
+    } else {
+      console.log(`📊 LangSmith tracing: disabled`);
+    }
+
+    console.log(`\nℹ️  Raw transcriptions will not be formatted automatically.`);
     console.log(`   Use the "Format Transcriptions" button in the UI to process them.\n`);
   });
 }
