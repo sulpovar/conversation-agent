@@ -2,11 +2,11 @@ const API_BASE = 'http://localhost:3000/api';
 
 // State
 let allFiles = [];
-let allPrompts = [];
+let allAgents = []; // Renamed from allPrompts
 let selectedFiles = new Map(); // Changed from Set to Map for topic support
 let fileTopics = new Map(); // Cache of filename -> topics array
 let currentFile = null;
-let currentPrompt = null;
+let currentAgent = null; // Renamed from currentPrompt
 let currentFilter = 'all';
 let viewMode = 'rendered';
 let promptMode = 'saved';
@@ -15,7 +15,7 @@ let editingPrompt = null;
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
     loadFiles();
-    loadPrompts();
+    loadAgents(); // Renamed from loadPrompts
     setupEventListeners();
 });
 
@@ -24,7 +24,7 @@ function setupEventListeners() {
     document.getElementById('formatBtn').addEventListener('click', formatTranscriptions);
     document.getElementById('refreshBtn').addEventListener('click', () => {
         loadFiles();
-        loadPrompts();
+        loadAgents(); // Renamed from loadPrompts
     });
 
     document.getElementById('rawViewBtn').addEventListener('click', () => setViewMode('raw'));
@@ -47,7 +47,7 @@ function setupEventListeners() {
     document.getElementById('clearCustomSelectionBtn').addEventListener('click', clearSelection);
 
     document.getElementById('newPromptBtn').addEventListener('click', () => openPromptModal('new'));
-    document.getElementById('runSavedPromptBtn').addEventListener('click', runSavedPrompt);
+    document.getElementById('runSavedPromptBtn').addEventListener('click', runSelectedAgent);
     document.getElementById('editPromptBtn').addEventListener('click', () => openPromptModal('edit'));
     document.getElementById('deletePromptBtn').addEventListener('click', deletePrompt);
     document.getElementById('clearSavedSelectionBtn').addEventListener('click', clearSelection);
@@ -283,76 +283,105 @@ function clearSelection() {
 
 // ==== PROMPT MANAGEMENT ====
 
-async function loadPrompts() {
+async function loadAgents() {
     try {
-        const response = await fetch(`${API_BASE}/prompts`);
-        if (!response.ok) throw new Error('Failed to load prompts');
-        allPrompts = await response.json();
-        renderPromptList();
+        const response = await fetch(`${API_BASE}/agents`);
+        if (!response.ok) throw new Error('Failed to load agents');
+        allAgents = await response.json();
+        renderAgentList(); // Renamed from renderPromptList
     } catch (error) {
-        console.error('Error loading prompts:', error);
-        document.getElementById('promptList').innerHTML = '<div class="empty-state-small">Error loading prompts</div>';
+        console.error('Error loading agents:', error);
+        document.getElementById('promptList').innerHTML = '<div class="empty-state-small">Error loading agents</div>';
     }
 }
 
-function renderPromptList() {
+// Backward compatibility - keep loadPrompts as alias
+async function loadPrompts() {
+    return loadAgents();
+}
+
+function renderAgentList() {
     const promptListEl = document.getElementById('promptList');
 
-    if (allPrompts.length === 0) {
-        promptListEl.innerHTML = '<div class="empty-state-small">No prompts found</div>';
+    if (allAgents.length === 0) {
+        promptListEl.innerHTML = '<div class="empty-state-small">No agents found</div>';
         return;
     }
 
-    promptListEl.innerHTML = allPrompts.map(prompt => {
-        const isSelected = currentPrompt && currentPrompt.filename === prompt.filename;
-        const description = prompt.metadata?.description || 'No description';
-        const category = prompt.metadata?.category || 'user';
+    promptListEl.innerHTML = allAgents.map(agent => {
+        const isSelected = currentAgent && currentAgent.filename === agent.filename;
+        const description = agent.metadata?.description || 'No description';
+        const category = agent.metadata?.category || 'user';
+
+        // Agent type badge
+        const agentTypeBadge = agent.agentType === 'flow'
+            ? '<span class="agent-type-badge agent-type-flow">🔄 Flow</span>'
+            : '<span class="agent-type-badge agent-type-prompt">📝 Prompt</span>';
 
         return `
-            <div class="prompt-item ${isSelected ? 'selected' : ''}" onclick="selectPrompt('${prompt.filename}')">
-                <div class="prompt-item-name">${prompt.name}</div>
+            <div class="prompt-item ${isSelected ? 'selected' : ''}" onclick="selectAgent('${agent.filename}')">
+                <div class="agent-item-header">
+                    <div class="prompt-item-name">${agent.name}</div>
+                    ${agentTypeBadge}
+                </div>
                 <div class="prompt-item-desc">${description}</div>
-                <div class="prompt-item-meta">${category} • v${prompt.version}</div>
+                <div class="prompt-item-meta">${category} • v${agent.version}</div>
             </div>
         `;
     }).join('');
 }
 
-async function selectPrompt(filename) {
+// Backward compatibility
+function renderPromptList() {
+    return renderAgentList();
+}
+
+async function selectAgent(filename) {
     try {
-        const response = await fetch(`${API_BASE}/prompts/${filename}`);
-        if (!response.ok) throw new Error('Failed to load prompt');
+        const response = await fetch(`${API_BASE}/agents/${filename}`);
+        if (!response.ok) throw new Error('Failed to load agent');
 
         const data = await response.json();
-        currentPrompt = allPrompts.find(p => p.filename === filename);
-        currentPrompt.content = data.content;
-        currentPrompt.metadata = data.metadata;
+        currentAgent = allAgents.find(a => a.filename === filename);
+        currentAgent.content = data.content;
+        currentAgent.metadata = data.metadata;
+        currentAgent.agentType = data.agentType;
 
-        renderPromptList();
+        renderAgentList(); // Renamed from renderPromptList
         renderPromptDetails();
         updatePromptButtons();
     } catch (error) {
-        console.error('Error loading prompt:', error);
+        console.error('Error loading agent:', error);
         showSavedStatus('error', `Error: ${error.message}`);
     }
+}
+
+// Backward compatibility
+async function selectPrompt(filename) {
+    return selectAgent(filename);
 }
 
 function renderPromptDetails() {
     const detailsEl = document.getElementById('promptDetails');
 
-    if (!currentPrompt || !currentPrompt.content) {
-        detailsEl.innerHTML = '<div class="empty-state-small">Select a prompt to view details</div>';
+    if (!currentAgent || !currentAgent.content) {
+        detailsEl.innerHTML = '<div class="empty-state-small">Select an agent to view details</div>';
         return;
     }
 
-    detailsEl.innerHTML = `<div class="prompt-details-content">${escapeHtml(currentPrompt.content)}</div>`;
+    // For flows, show JSON; for prompts, show text
+    if (currentAgent.agentType === 'flow') {
+        detailsEl.innerHTML = `<div class="prompt-details-content"><pre>${escapeHtml(JSON.stringify(currentAgent.content, null, 2))}</pre></div>`;
+    } else {
+        detailsEl.innerHTML = `<div class="prompt-details-content">${escapeHtml(currentAgent.content)}</div>`;
+    }
 }
 
 function updatePromptButtons() {
-    const hasPrompt = currentPrompt !== null;
-    document.getElementById('runSavedPromptBtn').disabled = !hasPrompt;
-    document.getElementById('editPromptBtn').disabled = !hasPrompt;
-    document.getElementById('deletePromptBtn').disabled = !hasPrompt;
+    const hasAgent = currentAgent !== null;
+    document.getElementById('runSavedPromptBtn').disabled = !hasAgent;
+    document.getElementById('editPromptBtn').disabled = !hasAgent;
+    document.getElementById('deletePromptBtn').disabled = !hasAgent;
 }
 
 function setPromptMode(mode) {
@@ -422,11 +451,11 @@ async function runCustomPrompt() {
 
 // ==== SAVED PROMPT ACTIONS ====
 
-async function runSavedPrompt() {
+async function runSelectedAgent() {
     const artifactName = document.getElementById('savedArtifactName').value.trim();
 
-    if (!currentPrompt) {
-        showSavedStatus('error', 'Please select a prompt');
+    if (!currentAgent) {
+        showSavedStatus('error', 'Please select an agent');
         return;
     }
 
@@ -441,14 +470,16 @@ async function runSavedPrompt() {
     }
 
     try {
-        showSavedStatus('loading', 'Running prompt with Claude...');
+        const agentType = currentAgent.agentType === 'flow' ? 'flow' : 'prompt';
+        const statusMsg = agentType === 'flow' ? 'Running flow...' : 'Running prompt with Claude...';
+        showSavedStatus('loading', statusMsg);
         document.getElementById('runSavedPromptBtn').disabled = true;
 
-        const response = await fetch(`${API_BASE}/run-saved-prompt`, {
+        const response = await fetch(`${API_BASE}/run-agent`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                promptFilename: currentPrompt.filename,
+                agentFilename: currentAgent.filename,
                 files: getSelectedFilesForAPI(),
                 artifactName: artifactName
             })
@@ -456,7 +487,7 @@ async function runSavedPrompt() {
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to run prompt');
+            throw new Error(errorData.error || `Failed to run ${agentType}`);
         }
 
         const result = await response.json();
@@ -473,10 +504,16 @@ async function runSavedPrompt() {
     }
 }
 
-async function deletePrompt() {
-    if (!currentPrompt) return;
+// Backward compatibility
+async function runSavedPrompt() {
+    return runSelectedAgent();
+}
 
-    if (!confirm(`Delete "${currentPrompt.name}" (v${currentPrompt.version})?`)) {
+async function deletePrompt() {
+    if (!currentAgent) return;
+
+    const agentType = currentAgent.agentType === 'flow' ? 'flow' : 'prompt';
+    if (!confirm(`Delete "${currentAgent.name}" (v${currentAgent.version})?`)) {
         return;
     }
 
@@ -484,17 +521,17 @@ async function deletePrompt() {
         const response = await fetch(`${API_BASE}/prompts/delete`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filename: currentPrompt.filename })
+            body: JSON.stringify({ filename: currentAgent.filename })
         });
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to delete prompt');
+            throw new Error(errorData.error || `Failed to delete ${agentType}`);
         }
 
-        showSavedStatus('success', 'Prompt deleted');
-        currentPrompt = null;
-        await loadPrompts();
+        showSavedStatus('success', `${agentType.charAt(0).toUpperCase() + agentType.slice(1)} deleted`);
+        currentAgent = null;
+        await loadAgents();
         renderPromptDetails();
         updatePromptButtons();
 

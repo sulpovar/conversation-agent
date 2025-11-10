@@ -1,0 +1,37 @@
+{
+  "name": "interview-analysis",
+  "description": "Sequential three-step analysis: summarize, extract skills, generate assessment",
+  "nodes": [
+    {
+      "id": "summarize",
+      "type": "llm",
+      "prompt": "Analyze the following interview transcription and create a concise summary highlighting the key points discussed, main topics covered, and overall conversation flow.\n\nTranscription:\n{input}",
+      "output": "summary",
+      "model": "claude-3-5-haiku-20241022",
+      "maxTokens": 4096
+    },
+    {
+      "id": "extract_skills",
+      "type": "llm",
+      "prompt": "Based on this interview summary, extract and categorize all technical and soft skills demonstrated or mentioned by the candidate. List them in clear categories.\n\nSummary:\n{summary}",
+      "output": "skills",
+      "model": "claude-3-5-haiku-20241022",
+      "maxTokens": 2048
+    },
+    {
+      "id": "generate_assessment",
+      "type": "llm",
+      "prompt": "Create a comprehensive candidate assessment report based on the summary and identified skills. Include strengths, areas for growth, and hiring recommendations.\n\nSummary:\n{summary}\n\nSkills:\n{skills}",
+      "output": "assessment",
+      "model": "claude-3-5-haiku-20241022",
+      "maxTokens": 4096
+    }
+  ],
+  "edges": [
+    { "from": "summarize", "to": "extract_skills" },
+    { "from": "extract_skills", "to": "generate_assessment" },
+    { "from": "generate_assessment", "to": "END" }
+  ],
+  "entryPoint": "summarize",
+  "outputs": ["summary", "skills", "assessment"]
+}

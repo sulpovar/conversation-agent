@@ -1,0 +1,6 @@
+{
+  "visible": true,
+  "description": "Sequential three-step analysis: summarize, extract skills, generate assessment",
+  "category": "analysis",
+  "type": "flow"
+}

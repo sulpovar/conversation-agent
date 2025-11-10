@@ -4,6 +4,7 @@ const cors = require('cors');
 const fs = require('fs').promises;
 const path = require('path');
 const { ChatAnthropic } = require('@langchain/anthropic');
+const { StateGraph, END } = require('@langchain/langgraph');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -18,6 +19,10 @@ const REQUEST_SIZE_LIMIT = process.env.REQUEST_SIZE_LIMIT || '50mb';
 const MAX_TOKENS_TRANSCRIPTION = parseInt(process.env.MAX_TOKENS_TRANSCRIPTION || '4096');
 const MAX_TOKENS_PROMPT = parseInt(process.env.MAX_TOKENS_PROMPT || '8192');
 const DEBUG_WRITE_CHUNKS = process.env.DEBUG_WRITE_CHUNKS === 'true';
+
+// Agent type constants
+const FLOW_PREFIX = 'flow_';
+const PROMPT_PREFIX = 'prompt_';
 
 // Initialize LangChain ChatAnthropic model
 const llm = new ChatAnthropic({
@@ -262,6 +267,155 @@ function fillPromptTemplate(template, replacements) {
     result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
   }
   return result;
+}
+
+// Parse agent filename (flow or prompt)
+function parseAgentFilename(filename) {
+  const parts = filename.split('_');
+
+  // Check if it's a flow file
+  if (filename.startsWith(FLOW_PREFIX) && filename.endsWith('.json')) {
+    const name = parts[1];
+    const versionPart = parts[2];
+    const version = versionPart ? parseInt(versionPart.replace('v', '')) : null;
+    const timestamp = parts.slice(3).join('_').replace('.json', '');
+
+    return {
+      type: 'file',
+      agentType: 'flow',
+      name,
+      version,
+      timestamp
+    };
+  }
+
+  // Check if it's a prompt file
+  if (filename.startsWith(PROMPT_PREFIX) && filename.endsWith('.txt')) {
+    const name = parts[1];
+    const versionPart = parts[2];
+    const version = versionPart ? parseInt(versionPart.replace('v', '')) : null;
+    const timestamp = parts.slice(3).join('_').replace('.txt', '');
+
+    return {
+      type: 'file',
+      agentType: 'prompt',
+      name,
+      version,
+      timestamp
+    };
+  }
+
+  return null;
+}
+
+// Load flow definition from JSON file
+async function loadFlowDefinition(filename) {
+  try {
+    const filePath = path.join(PROMPTS_DIR, filename);
+    const content = await fs.readFile(filePath, 'utf-8');
+    const flowDef = JSON.parse(content);
+    return flowDef;
+  } catch (error) {
+    console.error(`Error loading flow definition ${filename}:`, error.message);
+    throw error;
+  }
+}
+
+// Build LangGraph from flow definition
+async function buildLangGraph(flowDef, inputContext) {
+  const workflow = new StateGraph({
+    channels: {
+      input: { value: (x, y) => (y !== undefined ? y : x) },
+      ...Object.fromEntries(
+        flowDef.nodes.map(node => [
+          node.output,
+          { value: (x, y) => (y !== undefined ? y : x) }
+        ])
+      )
+    }
+  });
+
+  // Add nodes
+  for (const node of flowDef.nodes) {
+    if (node.type === 'llm') {
+      workflow.addNode(node.id, async (state) => {
+        console.log(`  🔄 Executing node: ${node.id}`);
+
+        // Fill prompt template with current state
+        const filledPrompt = fillPromptTemplate(node.prompt, state);
+
+        // Create node-specific LLM with custom config
+        const nodeLlm = new ChatAnthropic({
+          anthropicApiKey: process.env.CLAUDE_API_KEY,
+          modelName: node.model || CLAUDE_MODEL,
+          temperature: node.temperature !== undefined ? node.temperature : 0,
+        });
+
+        // Execute LLM call
+        const startTime = Date.now();
+        const response = await nodeLlm.invoke(filledPrompt, {
+          maxTokens: node.maxTokens || MAX_TOKENS_PROMPT
+        });
+        const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+
+        const outputTokens = response.response_metadata?.usage?.output_tokens || 0;
+        const inputTokens = response.response_metadata?.usage?.input_tokens || 0;
+
+        console.log(`  ✅ Node ${node.id} completed in ${duration}s`);
+        console.log(`     📊 Tokens - Input: ${inputTokens}, Output: ${outputTokens}`);
+
+        // Return new state with this node's output
+        return {
+          [node.output]: response.content
+        };
+      });
+    }
+  }
+
+  // Add edges
+  for (const edge of flowDef.edges) {
+    if (edge.to === 'END') {
+      workflow.addEdge(edge.from, END);
+    } else {
+      workflow.addEdge(edge.from, edge.to);
+    }
+  }
+
+  // Set entry point
+  workflow.setEntryPoint(flowDef.entryPoint);
+
+  return workflow.compile();
+}
+
+// Execute flow with input context
+async function executeFlow(flowDef, inputContext) {
+  console.log(`\n🤖 Executing flow: ${flowDef.name}`);
+  console.log(`   📝 Nodes: ${flowDef.nodes.length}`);
+  console.log(`   🔗 Edges: ${flowDef.edges.length}`);
+
+  const startTime = Date.now();
+
+  // Build and compile the graph
+  const graph = await buildLangGraph(flowDef, inputContext);
+
+  // Execute the graph with initial state
+  const result = await graph.invoke({
+    input: inputContext
+  });
+
+  const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+  console.log(`\n✅ Flow completed in ${duration}s`);
+
+  // Extract outputs as specified in flow definition
+  const outputs = {};
+  for (const outputKey of flowDef.outputs) {
+    outputs[outputKey] = result[outputKey];
+  }
+
+  return {
+    outputs,
+    duration
+  };
 }
 
 // Format transcription using Claude with prompts from files
@@ -698,6 +852,107 @@ app.post('/api/rerun-prompt', async (req, res) => {
 // ===== PROMPT MANAGEMENT APIs =====
 
 // API: List all prompts (only visible ones)
+// API: List all agents (flows and prompts)
+app.get('/api/agents', async (req, res) => {
+  try {
+    const files = await fs.readdir(PROMPTS_DIR);
+
+    // Get flow files (exclude .meta.json files)
+    const flowFiles = files.filter(f => f.startsWith(FLOW_PREFIX) && f.endsWith('.json') && !f.endsWith('.meta.json'));
+
+    // Get prompt files
+    const promptFiles = files.filter(f => f.startsWith(PROMPT_PREFIX) && f.endsWith('.txt'));
+
+    // Process flows
+    const flows = await Promise.all(
+      flowFiles.map(async (filename) => {
+        const filePath = path.join(PROMPTS_DIR, filename);
+        const stats = await fs.stat(filePath);
+        const metadata = parseAgentFilename(filename);
+
+        // Load metadata file
+        let metaContent = null;
+        try {
+          const metaPath = path.join(PROMPTS_DIR, `${filename}.meta.json`);
+          const metaData = await fs.readFile(metaPath, 'utf-8');
+          metaContent = JSON.parse(metaData);
+        } catch {
+          // No metadata file, default to visible
+          metaContent = { visible: true };
+        }
+
+        // Only return visible flows
+        if (!metaContent.visible) {
+          return null;
+        }
+
+        return {
+          filename,
+          size: stats.size,
+          modified: stats.mtime,
+          ...metadata,
+          metadata: metaContent
+        };
+      })
+    );
+
+    // Process prompts
+    const prompts = await Promise.all(
+      promptFiles.map(async (filename) => {
+        const filePath = path.join(PROMPTS_DIR, filename);
+        const stats = await fs.stat(filePath);
+        const metadata = parseAgentFilename(filename);
+
+        // Load metadata file
+        let metaContent = null;
+        try {
+          const metaPath = path.join(PROMPTS_DIR, `${filename}.meta.json`);
+          const metaData = await fs.readFile(metaPath, 'utf-8');
+          metaContent = JSON.parse(metaData);
+        } catch {
+          // No metadata file, default to visible
+          metaContent = { visible: true };
+        }
+
+        // Only return visible prompts
+        if (!metaContent.visible) {
+          return null;
+        }
+
+        return {
+          filename,
+          size: stats.size,
+          modified: stats.mtime,
+          ...metadata,
+          metadata: metaContent
+        };
+      })
+    );
+
+    // Combine and filter out null values (hidden agents)
+    const allAgents = [...flows, ...prompts]
+      .filter(a => a !== null)
+      .sort((a, b) => {
+        // Sort flows before prompts
+        if (a.agentType !== b.agentType) {
+          return a.agentType === 'flow' ? -1 : 1;
+        }
+        // Then sort by name
+        if (a.name !== b.name) {
+          return a.name.localeCompare(b.name);
+        }
+        // Then by version (descending)
+        return (b.version || 0) - (a.version || 0);
+      });
+
+    res.json(allAgents);
+  } catch (error) {
+    console.error('Error listing agents:', error);
+    res.status(500).json({ error: 'Failed to list agents' });
+  }
+});
+
+// Backward compatibility: /api/prompts still works
 app.get('/api/prompts', async (req, res) => {
   try {
     const files = await fs.readdir(PROMPTS_DIR);
@@ -752,7 +1007,50 @@ app.get('/api/prompts', async (req, res) => {
   }
 });
 
-// API: Get prompt content
+// API: Get agent content (flow or prompt)
+app.get('/api/agents/:filename', async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const filePath = path.join(PROMPTS_DIR, filename);
+    const agentInfo = parseAgentFilename(filename);
+
+    if (!agentInfo) {
+      return res.status(400).json({ error: 'Invalid agent filename' });
+    }
+
+    // Load content based on agent type
+    let content;
+    if (agentInfo.agentType === 'flow') {
+      // For flows, parse JSON
+      const flowContent = await fs.readFile(filePath, 'utf-8');
+      content = JSON.parse(flowContent);
+    } else {
+      // For prompts, return as text
+      content = await fs.readFile(filePath, 'utf-8');
+    }
+
+    // Load metadata
+    let metaContent = null;
+    try {
+      const metaPath = path.join(PROMPTS_DIR, `${filename}.meta.json`);
+      const metaData = await fs.readFile(metaPath, 'utf-8');
+      metaContent = JSON.parse(metaData);
+    } catch {
+      metaContent = { visible: true };
+    }
+
+    res.json({
+      content,
+      metadata: metaContent,
+      agentType: agentInfo.agentType
+    });
+  } catch (error) {
+    console.error('Error reading agent:', error);
+    res.status(500).json({ error: 'Failed to read agent' });
+  }
+});
+
+// Backward compatibility: Get prompt content
 app.get('/api/prompts/:filename', async (req, res) => {
   try {
     const { filename } = req.params;
@@ -940,6 +1238,154 @@ app.post('/api/prompts/delete', async (req, res) => {
 });
 
 // API: Run prompt with files (using saved prompt)
+// API: Run agent (flow or prompt)
+app.post('/api/run-agent', async (req, res) => {
+  try {
+    const { agentFilename, files, artifactName } = req.body;
+
+    if (!agentFilename || !artifactName) {
+      return res.status(400).json({ error: 'Agent filename and artifact name are required' });
+    }
+
+    // Determine agent type
+    const agentInfo = parseAgentFilename(agentFilename);
+    if (!agentInfo) {
+      return res.status(400).json({ error: 'Invalid agent filename' });
+    }
+
+    // Read file contents with optional topic selection (common for both agent types)
+    let contextText = '';
+    if (files && files.length > 0) {
+      const fileContents = await Promise.all(
+        files.map(async (fileSpec) => {
+          const filename = typeof fileSpec === 'string' ? fileSpec : fileSpec.file;
+          const topicIds = typeof fileSpec === 'object' ? fileSpec.topicIds : null;
+
+          const filePath = path.join(TRANSCRIPTIONS_DIR, filename);
+          const content = await fs.readFile(filePath, 'utf-8');
+
+          if (topicIds && topicIds.length > 0 && filename.endsWith('.md')) {
+            const topics = parseTopics(content);
+            const selectedTopics = topics.filter(t => topicIds.includes(t.id));
+
+            if (selectedTopics.length > 0) {
+              const topicContent = selectedTopics.map(t => t.content).join('\n\n');
+              const topicNames = selectedTopics.map(t => t.title).join(', ');
+              return `\n\n--- File: ${filename} (Topics: ${topicNames}) ---\n\n${topicContent}`;
+            }
+          }
+
+          return `\n\n--- File: ${filename} ---\n\n${content}`;
+        })
+      );
+      contextText = fileContents.join('\n\n');
+    }
+
+    // Determine next version number for artifact
+    const existingFiles = await fs.readdir(TRANSCRIPTIONS_DIR);
+    const existingVersions = existingFiles
+      .filter(f => f.startsWith(`artifact_${artifactName}_v`))
+      .map(f => {
+        const match = f.match(/artifact_.*_v(\d+)_/);
+        return match ? parseInt(match[1]) : 0;
+      });
+    const nextVersion = existingVersions.length > 0 ? Math.max(...existingVersions) + 1 : 1;
+
+    let result;
+    let agentMetadata = {};
+
+    // Execute based on agent type
+    if (agentInfo.agentType === 'flow') {
+      // Execute flow
+      const flowDef = await loadFlowDefinition(agentFilename);
+
+      console.log(`\n🤖 Running flow for artifact: ${artifactName} (v${nextVersion})`);
+      console.log(`   🔄 Flow: ${agentFilename}`);
+      console.log(`   📎 Context files: ${files?.length || 0}`);
+
+      const flowResult = await executeFlow(flowDef, contextText);
+
+      // Combine all outputs into result
+      result = Object.entries(flowResult.outputs)
+        .map(([key, value]) => `## ${key}\n\n${value}`)
+        .join('\n\n');
+
+      agentMetadata = {
+        agentFile: agentFilename,
+        agentType: 'flow',
+        flowDefinition: flowDef.name,
+        files: files || [],
+        version: nextVersion,
+        createdAt: new Date().toISOString(),
+        type: 'flow_artifact',
+        duration: flowResult.duration
+      };
+
+    } else {
+      // Execute prompt
+      const promptPath = path.join(PROMPTS_DIR, agentFilename);
+      const promptContent = await fs.readFile(promptPath, 'utf-8');
+
+      const fullPrompt = `${promptContent}\n\n${contextText}`;
+      const promptSize = Buffer.byteLength(fullPrompt, 'utf8');
+
+      console.log(`\n📝 Running prompt for artifact: ${artifactName} (v${nextVersion})`);
+      console.log(`   📝 Prompt: ${agentFilename}`);
+      console.log(`   📄 Prompt size: ${(promptSize / 1024).toFixed(2)} KB`);
+      console.log(`   📎 Context files: ${files?.length || 0}`);
+
+      const startTime = Date.now();
+      const response = await llm.invoke(fullPrompt, {
+        maxTokens: MAX_TOKENS_PROMPT
+      });
+
+      const duration = Date.now() - startTime;
+      const outputTokens = response.response_metadata?.usage?.output_tokens || 0;
+      const inputTokens = response.response_metadata?.usage?.input_tokens || 0;
+
+      console.log(`✅ Prompt completed in ${(duration / 1000).toFixed(2)}s`);
+      console.log(`   📊 Tokens - Input: ${inputTokens}, Output: ${outputTokens}\n`);
+
+      result = response.content;
+
+      agentMetadata = {
+        agentFile: agentFilename,
+        agentType: 'prompt',
+        prompt: promptContent,
+        files: files || [],
+        version: nextVersion,
+        createdAt: new Date().toISOString(),
+        model: CLAUDE_MODEL,
+        type: 'prompt_artifact'
+      };
+    }
+
+    // Save artifact
+    const timestamp = getTimestamp();
+    const artifactFilename = `artifact_${artifactName}_v${nextVersion}_${timestamp}.md`;
+    const artifactPath = path.join(TRANSCRIPTIONS_DIR, artifactFilename);
+    await fs.writeFile(artifactPath, result, 'utf-8');
+
+    // Save metadata
+    const metaPath = path.join(TRANSCRIPTIONS_DIR, `${artifactFilename}.meta.json`);
+    await fs.writeFile(metaPath, JSON.stringify(agentMetadata, null, 2), 'utf-8');
+
+    console.log(`✓ Created: ${artifactFilename}`);
+
+    res.json({
+      filename: artifactFilename,
+      content: result,
+      version: nextVersion,
+      metadata: agentMetadata
+    });
+
+  } catch (error) {
+    console.error('Error running agent:', error);
+    res.status(500).json({ error: error.message || 'Failed to run agent' });
+  }
+});
+
+// Backward compatibility: Run saved prompt
 app.post('/api/run-saved-prompt', async (req, res) => {
   try {
     const { promptFilename, files, artifactName } = req.body;

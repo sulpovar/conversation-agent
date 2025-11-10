@@ -49,25 +49,25 @@
             <!-- Right Panel: Prompt Interface -->
             <aside class="prompt-panel">
                 <div class="panel-header">
-                    <h2>Prompts</h2>
+                    <h2>Agents</h2>
                     <div class="prompt-mode-tabs">
                         <button id="savedPromptsTabBtn" class="tab-btn-small active">Saved</button>
-                        <button id="customPromptTabBtn" class="tab-btn-small">Custom</button>
+                        <button id="customPromptTabBtn" class="tab-btn-small">Custom Prompt</button>
                     </div>
                 </div>
 
-                <!-- Saved Prompts View -->
+                <!-- Saved Agents View -->
                 <div id="savedPromptsView" class="prompt-view active">
                     <div class="prompt-list-header">
-                        <h3>Available Prompts</h3>
+                        <h3>Available Agents</h3>
                         <button id="newPromptBtn" class="btn-small">+ New</button>
                     </div>
                     <div id="promptList" class="prompt-list">
-                        <div class="loading">Loading prompts...</div>
+                        <div class="loading">Loading agents...</div>
                     </div>
 
                     <div class="prompt-details" id="promptDetails">
-                        <div class="empty-state-small">Select a prompt to view details</div>
+                        <div class="empty-state-small">Select an agent to view details</div>
                     </div>
 
                     <div class="prompt-actions-section">
@@ -89,7 +89,7 @@
                         <button id="clearSavedSelectionBtn" class="btn-small-secondary">Clear Selection</button>
 
                         <div class="button-group">
-                            <button id="runSavedPromptBtn" class="btn-primary" disabled>Run Prompt</button>
+                            <button id="runSavedPromptBtn" class="btn-primary" disabled>Run Agent</button>
                             <button id="editPromptBtn" class="btn-secondary" disabled>Edit</button>
                             <button id="deletePromptBtn" class="btn-danger" disabled>Delete</button>
                         </div>

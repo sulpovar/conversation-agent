@@ -1,0 +1,47 @@
+{
+  "name": "comprehensive-eval",
+  "description": "Parallel evaluation flow: summary, then parallel technical/soft skills analysis, merged into final report",
+  "nodes": [
+    {
+      "id": "create_summary",
+      "type": "llm",
+      "prompt": "Create a detailed summary of this interview transcription, focusing on the candidate's responses, discussion topics, and overall interaction quality.\n\nTranscription:\n{input}",
+      "output": "summary",
+      "model": "claude-3-5-haiku-20241022",
+      "maxTokens": 4096
+    },
+    {
+      "id": "technical_eval",
+      "type": "llm",
+      "prompt": "Evaluate the candidate's technical competencies based on this interview summary. Assess their technical knowledge, problem-solving abilities, and domain expertise. Rate each area on a scale of 1-5 with justification.\n\nSummary:\n{summary}",
+      "output": "technical_evaluation",
+      "model": "claude-3-5-haiku-20241022",
+      "maxTokens": 3072
+    },
+    {
+      "id": "soft_skills_eval",
+      "type": "llm",
+      "prompt": "Evaluate the candidate's soft skills based on this interview summary. Assess communication, teamwork, leadership potential, adaptability, and cultural fit. Rate each area on a scale of 1-5 with justification.\n\nSummary:\n{summary}",
+      "output": "soft_skills_evaluation",
+      "model": "claude-3-5-haiku-20241022",
+      "maxTokens": 3072
+    },
+    {
+      "id": "final_report",
+      "type": "llm",
+      "prompt": "Create a comprehensive hiring recommendation report that synthesizes the technical and soft skills evaluations. Include an overall candidate rating, key strengths, concerns, and a clear hire/no-hire recommendation with reasoning.\n\nTechnical Evaluation:\n{technical_evaluation}\n\nSoft Skills Evaluation:\n{soft_skills_evaluation}",
+      "output": "final_recommendation",
+      "model": "claude-3-5-haiku-20241022",
+      "maxTokens": 4096
+    }
+  ],
+  "edges": [
+    { "from": "create_summary", "to": "technical_eval" },
+    { "from": "create_summary", "to": "soft_skills_eval" },
+    { "from": "technical_eval", "to": "final_report" },
+    { "from": "soft_skills_eval", "to": "final_report" },
+    { "from": "final_report", "to": "END" }
+  ],
+  "entryPoint": "create_summary",
+  "outputs": ["summary", "technical_evaluation", "soft_skills_evaluation", "final_recommendation"]
+}

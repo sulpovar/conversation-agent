@@ -606,6 +606,45 @@ textarea.input-field {
     margin-bottom: 0.25rem;
 }
 
+/* Agent item header with badge */
+.agent-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.25rem;
+}
+
+/* Agent type badges */
+.agent-type-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.agent-type-flow {
+    background: #e3f2fd;
+    color: #1976d2;
+}
+
+.agent-type-prompt {
+    background: #f3e5f5;
+    color: #7b1fa2;
+}
+
+/* Badge styles for selected items */
+.prompt-item.selected .agent-type-badge.agent-type-flow {
+    background: #bbdefb;
+    color: #0d47a1;
+}
+
+.prompt-item.selected .agent-type-badge.agent-type-prompt {
+    background: #e1bee7;
+    color: #4a148c;
+}
+
 .prompt-item-desc {
     font-size: 0.75rem;
     color: #666;
