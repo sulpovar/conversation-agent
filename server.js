@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs').promises;
 const path = require('path');
-const Anthropic = require('@anthropic-ai/sdk');
+const { ChatAnthropic } = require('@langchain/anthropic');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,8 +19,11 @@ const MAX_TOKENS_TRANSCRIPTION = parseInt(process.env.MAX_TOKENS_TRANSCRIPTION |
 const MAX_TOKENS_PROMPT = parseInt(process.env.MAX_TOKENS_PROMPT || '8192');
 const DEBUG_WRITE_CHUNKS = process.env.DEBUG_WRITE_CHUNKS === 'true';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.CLAUDE_API_KEY,
+// Initialize LangChain ChatAnthropic model
+const llm = new ChatAnthropic({
+  anthropicApiKey: process.env.CLAUDE_API_KEY,
+  modelName: CLAUDE_MODEL,
+  temperature: 0,
 });
 
 app.use(cors());
@@ -321,20 +324,19 @@ async function formatTranscription(rawText) {
 
     try {
       const apiStartTime = Date.now();
-      const message = await anthropic.messages.create({
-        model: CLAUDE_MODEL,
-        max_tokens: MAX_TOKENS_TRANSCRIPTION,
-        messages: [{
-          role: 'user',
-          content: prompt
-        }]
+
+      // Use LangChain to invoke the model
+      const response = await llm.invoke(prompt, {
+        maxTokens: MAX_TOKENS_TRANSCRIPTION
       });
 
       const apiDuration = Date.now() - apiStartTime;
-      const outputTokens = message.usage?.output_tokens || 0;
-      const inputTokens = message.usage?.input_tokens || 0;
 
-      const formattedText = message.content[0].text;
+      // Extract token usage from response metadata
+      const outputTokens = response.response_metadata?.usage?.output_tokens || 0;
+      const inputTokens = response.response_metadata?.usage?.input_tokens || 0;
+
+      const formattedText = response.content;
       formattedChunks.push(formattedText);
 
       const chunkDuration = Date.now() - chunkStartTime;
@@ -613,23 +615,20 @@ app.post('/api/prompt', async (req, res) => {
     console.log(`   📎 Context files: ${files?.length || 0}`);
 
     const startTime = Date.now();
-    const message = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: MAX_TOKENS_PROMPT,
-      messages: [{
-        role: 'user',
-        content: fullPrompt
-      }]
+
+    // Use LangChain to invoke the model
+    const response = await llm.invoke(fullPrompt, {
+      maxTokens: MAX_TOKENS_PROMPT
     });
 
     const duration = Date.now() - startTime;
-    const outputTokens = message.usage?.output_tokens || 0;
-    const inputTokens = message.usage?.input_tokens || 0;
+    const outputTokens = response.response_metadata?.usage?.output_tokens || 0;
+    const inputTokens = response.response_metadata?.usage?.input_tokens || 0;
 
     console.log(`✅ Prompt completed in ${(duration / 1000).toFixed(2)}s`);
     console.log(`   📊 Tokens - Input: ${inputTokens}, Output: ${outputTokens}\n`);
 
-    const result = message.content[0].text;
+    const result = response.content;
 
     // Save artifact
     const timestamp = getTimestamp();
@@ -1007,23 +1006,20 @@ app.post('/api/run-saved-prompt', async (req, res) => {
     console.log(`   📎 Context files: ${files?.length || 0}`);
 
     const startTime = Date.now();
-    const message = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: MAX_TOKENS_PROMPT,
-      messages: [{
-        role: 'user',
-        content: fullPrompt
-      }]
+
+    // Use LangChain to invoke the model
+    const response = await llm.invoke(fullPrompt, {
+      maxTokens: MAX_TOKENS_PROMPT
     });
 
     const duration = Date.now() - startTime;
-    const outputTokens = message.usage?.output_tokens || 0;
-    const inputTokens = message.usage?.input_tokens || 0;
+    const outputTokens = response.response_metadata?.usage?.output_tokens || 0;
+    const inputTokens = response.response_metadata?.usage?.input_tokens || 0;
 
     console.log(`✅ Prompt completed in ${(duration / 1000).toFixed(2)}s`);
     console.log(`   📊 Tokens - Input: ${inputTokens}, Output: ${outputTokens}\n`);
 
-    const result = message.content[0].text;
+    const result = response.content;
 
     // Save artifact
     const timestamp = getTimestamp();
