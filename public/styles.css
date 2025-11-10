@@ -41,6 +41,11 @@ body {
     color: #555;
 }
 
+.header-buttons {
+    display: flex;
+    gap: 0.5rem;
+}
+
 /* File List Panel */
 .file-list-panel {
     background: white;

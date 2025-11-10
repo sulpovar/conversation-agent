@@ -1058,16 +1058,112 @@ app.post('/api/run-saved-prompt', async (req, res) => {
   }
 });
 
+// API: Manually trigger formatting of raw transcriptions
+app.post('/api/format-transcriptions', async (req, res) => {
+  try {
+    const startTime = Date.now();
+    const files = await fs.readdir(TRANSCRIPTIONS_DIR);
+    const rawFiles = files.filter(f => f.startsWith('interview_raw_') && f.endsWith('.txt'));
+
+    if (rawFiles.length === 0) {
+      return res.json({
+        message: 'No raw transcriptions found to process',
+        processed: 0,
+        skipped: 0
+      });
+    }
+
+    console.log(`\n📋 Found ${rawFiles.length} raw transcription(s) to check...`);
+
+    let processedCount = 0;
+    let skippedCount = 0;
+    const results = [];
+
+    for (const rawFile of rawFiles) {
+      const { timestamp } = parseFilename(rawFile);
+      const formattedFile = `interview_formatted_${timestamp}.md`;
+      const formattedPath = path.join(TRANSCRIPTIONS_DIR, formattedFile);
+
+      // Check if formatted version already exists
+      try {
+        await fs.access(formattedPath);
+        console.log(`   ✓ Already formatted: ${rawFile}`);
+        skippedCount++;
+        results.push({ file: rawFile, status: 'skipped', reason: 'Already formatted' });
+        continue;
+      } catch {
+        // File doesn't exist, proceed with formatting
+      }
+
+      console.log(`\n📝 Formatting new transcription: ${rawFile}`);
+      const fileStartTime = Date.now();
+      const rawPath = path.join(TRANSCRIPTIONS_DIR, rawFile);
+      const rawText = await fs.readFile(rawPath, 'utf-8');
+
+      try {
+        const formatted = await formatTranscription(rawText);
+        await fs.writeFile(formattedPath, formatted, 'utf-8');
+
+        // Create metadata file
+        const metaPath = path.join(TRANSCRIPTIONS_DIR, `${formattedFile}.meta.json`);
+        const metadata = {
+          sourceFile: rawFile,
+          createdAt: new Date().toISOString(),
+          model: CLAUDE_MODEL,
+          type: 'formatted_transcription'
+        };
+        await fs.writeFile(metaPath, JSON.stringify(metadata, null, 2), 'utf-8');
+
+        const fileDuration = Date.now() - fileStartTime;
+        console.log(`✅ Created: ${formattedFile} (total: ${(fileDuration / 1000).toFixed(2)}s)`);
+        processedCount++;
+        results.push({
+          file: rawFile,
+          status: 'success',
+          output: formattedFile,
+          duration: fileDuration
+        });
+      } catch (error) {
+        console.error(`❌ Error formatting ${rawFile}:`, error.message);
+        results.push({
+          file: rawFile,
+          status: 'error',
+          error: error.message
+        });
+      }
+    }
+
+    const totalDuration = Date.now() - startTime;
+    console.log(`\n📊 Transcription processing complete:`);
+    console.log(`   ✅ Formatted: ${processedCount}`);
+    console.log(`   ⏭️  Skipped: ${skippedCount}`);
+    console.log(`   ⏱️  Total time: ${(totalDuration / 1000).toFixed(2)}s\n`);
+
+    res.json({
+      message: 'Formatting complete',
+      processed: processedCount,
+      skipped: skippedCount,
+      totalDuration,
+      results
+    });
+  } catch (error) {
+    console.error('❌ Error processing raw transcriptions:', error);
+    res.status(500).json({ error: error.message || 'Failed to process transcriptions' });
+  }
+});
+
 // Start server
 async function startServer() {
   await ensureDirectories();
-  await processRawTranscriptions();
+  // Removed automatic processing - now triggered manually via API
 
   app.listen(PORT, () => {
     console.log(`\n🚀 Server running at http://localhost:${PORT}`);
     console.log(`📁 Transcriptions directory: ${TRANSCRIPTIONS_DIR}`);
     console.log(`📝 Prompts directory: ${PROMPTS_DIR}`);
     console.log(`🤖 Claude model: ${CLAUDE_MODEL}\n`);
+    console.log(`ℹ️  Raw transcriptions will not be formatted automatically.`);
+    console.log(`   Use the "Format Transcriptions" button in the UI to process them.\n`);
   });
 }
 

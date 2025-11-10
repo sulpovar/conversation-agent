@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Setup event listeners
 function setupEventListeners() {
+    document.getElementById('formatBtn').addEventListener('click', formatTranscriptions);
     document.getElementById('refreshBtn').addEventListener('click', () => {
         loadFiles();
         loadPrompts();
@@ -55,6 +56,53 @@ function setupEventListeners() {
 }
 
 // ==== FILE MANAGEMENT ====
+
+async function formatTranscriptions() {
+    const btn = document.getElementById('formatBtn');
+    const originalText = btn.textContent;
+
+    try {
+        btn.disabled = true;
+        btn.textContent = '⏳ Formatting...';
+
+        const response = await fetch(`${API_BASE}/format-transcriptions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to format transcriptions');
+        }
+
+        const result = await response.json();
+
+        // Show result message
+        let message = '';
+        if (result.processed === 0 && result.skipped === 0) {
+            message = 'No raw transcriptions found';
+        } else {
+            message = `Formatted: ${result.processed}, Skipped: ${result.skipped}`;
+            if (result.totalDuration) {
+                message += ` (${(result.totalDuration / 1000).toFixed(1)}s)`;
+            }
+        }
+
+        alert(message);
+
+        // Refresh file list if any were processed
+        if (result.processed > 0) {
+            await loadFiles();
+        }
+
+    } catch (error) {
+        console.error('Error formatting transcriptions:', error);
+        alert(`Error: ${error.message}`);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
 
 async function loadFiles() {
     try {
