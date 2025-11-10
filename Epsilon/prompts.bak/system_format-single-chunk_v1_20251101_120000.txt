@@ -1,0 +1,9 @@
+Format this job interview transcription into clean, readable markdown. Include:
+- Proper headers and sections
+- Speaker labels (e.g., Interviewer, Candidate; names if available)
+- Timestamps if present
+
+The result must contain the original text in full
+
+Transcription:
+{content}

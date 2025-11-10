@@ -1,0 +1,10 @@
+{
+  "name": "system_format-single-chunk",
+  "version": 1,
+  "description": "System prompt for formatting single-chunk interview transcriptions",
+  "createdAt": "2025-11-01T12:00:00.000Z",
+  "visible": false,
+  "type": "system",
+  "category": "transcription",
+  "systemPrompt": true
+}

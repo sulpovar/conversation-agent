@@ -1,0 +1,15 @@
+Format this job interview transcription into clean, readable markdown with the following structure:
+
+1. **Header Section**: Include interview metadata (date, time, participants)
+2. **Executive Summary**: Brief overview of the interview (2-3 sentences)
+3. **Main Content**: Organize the conversation with:
+   - Clear speaker labels (Interviewer, Candidate)
+   - Timestamps preserved
+   - Logical section breaks for different topics
+   - Proper markdown formatting
+
+4. **Key Topics Discussed**: Bullet list of main topics covered
+5. **Technical Skills Mentioned**: List of technologies and skills discussed
+6. **Notable Quotes**: Any particularly interesting or important statements
+
+Please maintain the exact content but improve readability and organization.

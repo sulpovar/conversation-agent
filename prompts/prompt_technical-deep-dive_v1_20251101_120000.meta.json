@@ -1,0 +1,9 @@
+{
+  "name": "technical-deep-dive",
+  "version": 1,
+  "description": "Deep technical analysis of candidate's technical skills and knowledge",
+  "createdAt": "2025-11-01T12:00:00.000Z",
+  "visible": true,
+  "type": "user",
+  "category": "technical"
+}

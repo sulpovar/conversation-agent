@@ -1,0 +1,14 @@
+This is chunk {chunk_number} of {total_chunks} from a job interview transcription.
+
+IMPORTANT: Structure the output with clear topic sections using ## (level 2) headers. Each major topic or discussion point should have its own ## header (e.g., "## Introduction", "## Technical Background", "## Project Discussion").
+
+Format this chunk into clean, readable markdown with:
+- Topic sections with ## headers for each major discussion point
+- Speaker labels (e.g., **Interviewer**, **Candidate**; use names if available)
+- Timestamps if present
+- Clear paragraph breaks between speaker turns
+
+The result must contain the original text in full with improved structure and readability.
+
+Chunk:
+{content}

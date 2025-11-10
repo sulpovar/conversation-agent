@@ -1,0 +1,4 @@
+This is chunk {chunk_number} of {total_chunks} from a job interview transcription. Format this chunk into clean, readable markdown with proper structure. Include speaker labels, timestamps if present, and organize into sections. Maintain the exact content but improve readability. The result must contain the original text in full
+
+Chunk:
+{content}

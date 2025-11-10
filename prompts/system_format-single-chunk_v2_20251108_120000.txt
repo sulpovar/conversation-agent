@@ -1,0 +1,14 @@
+Format this job interview transcription into clean, readable markdown.
+
+IMPORTANT: Structure the output with clear topic sections using ## (level 2) headers. Each major topic or discussion point should have its own ## header (e.g., "## Introduction", "## Technical Background", "## Project Discussion", "## Closing").
+
+Include:
+- Topic sections with ## headers for each major discussion point
+- Speaker labels (e.g., **Interviewer**, **Candidate**; use names if available)
+- Timestamps if present
+- Clear paragraph breaks between speaker turns
+
+The result must contain the original text in full with improved structure and readability.
+
+Transcription:
+{content}
