@@ -850,6 +850,53 @@ textarea.input-field {
     margin-top: 0.25rem;
 }
 
+/* RAG Section Styles */
+.rag-section {
+    background: #f0f7ff;
+    border: 1px solid #b3d9ff;
+    border-radius: 6px;
+    padding: 0.75rem;
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
+.rag-section label {
+    display: flex;
+    align-items: center;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: #1976d2;
+    cursor: pointer;
+}
+
+.rag-section label input[type="checkbox"] {
+    margin-right: 0.5rem;
+    cursor: pointer;
+}
+
+.rag-section > label:first-child {
+    margin-bottom: 0.75rem;
+}
+
+#savedRagOptions,
+#customRagOptions {
+    margin-top: 0.5rem;
+}
+
+#savedRagOptions label,
+#customRagOptions label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+    margin-top: 0.75rem;
+    color: #555;
+}
+
+#savedRagOptions label:first-child,
+#customRagOptions label:first-child {
+    margin-top: 0;
+}
+
 /* Responsive */
 @media (max-width: 1200px) {
     .main-content {

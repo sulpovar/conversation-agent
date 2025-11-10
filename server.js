@@ -43,6 +43,18 @@ if (LANGSMITH_TRACING) {
 const FLOW_PREFIX = 'flow_';
 const PROMPT_PREFIX = 'prompt_';
 
+// RAG Configuration
+const RAG_ENABLED = process.env.RAG_ENABLED !== 'false'; // Default to true
+const RAG_TOP_K = parseInt(process.env.RAG_TOP_K || '3');
+const RAG_CHUNK_SIZE = parseInt(process.env.RAG_CHUNK_SIZE || '1500');
+const RAG_CHUNK_OVERLAP = parseInt(process.env.RAG_CHUNK_OVERLAP || '150');
+const RAG_AUTO_SYNC_ON_STARTUP = process.env.RAG_AUTO_SYNC_ON_STARTUP !== 'false'; // Default to true
+const RAG_EMBEDDING_MODEL = process.env.RAG_EMBEDDING_MODEL || 'Xenova/all-MiniLM-L6-v2';
+
+// Global RAG state
+let vectorStore = []; // Simple array-based vector store: { embedding, content, metadata }
+let embedder = null;
+
 // Initialize LangChain ChatAnthropic model
 const llm = new ChatAnthropic({
   anthropicApiKey: process.env.CLAUDE_API_KEY,
@@ -286,6 +298,157 @@ function fillPromptTemplate(template, replacements) {
     result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value);
   }
   return result;
+}
+
+// ==== RAG HELPER FUNCTIONS ====
+
+// Initialize embeddings model
+async function initializeEmbedder() {
+  if (!embedder && RAG_ENABLED) {
+    console.log('🔄 Loading embedding model...');
+    // Dynamic import for ES module
+    const { pipeline } = await import('@xenova/transformers');
+    embedder = await pipeline('feature-extraction', RAG_EMBEDDING_MODEL);
+    console.log('✅ Embedding model ready');
+  }
+  return embedder;
+}
+
+// Helper: Compute cosine similarity between two vectors
+function cosineSimilarity(vecA, vecB) {
+  const dotProduct = vecA.reduce((sum, a, i) => sum + a * vecB[i], 0);
+  const magA = Math.sqrt(vecA.reduce((sum, a) => sum + a * a, 0));
+  const magB = Math.sqrt(vecB.reduce((sum, b) => sum + b * b, 0));
+  return dotProduct / (magA * magB);
+}
+
+// Split text into chunks
+function splitTextIntoChunks(text, chunkSize, overlap) {
+  const chunks = [];
+  let start = 0;
+
+  while (start < text.length) {
+    const end = Math.min(start + chunkSize, text.length);
+    chunks.push(text.slice(start, end));
+
+    if (end >= text.length) break;
+    start = end - overlap;
+  }
+
+  return chunks;
+}
+
+// Chunk document into smaller pieces for embedding
+function chunkDocument(content, filename, chunkSize = RAG_CHUNK_SIZE, overlap = RAG_CHUNK_OVERLAP) {
+  const chunks = [];
+  const topics = parseTopics(content);
+
+  // If topics exist, chunk by topic
+  if (topics.length > 0) {
+    topics.forEach(topic => {
+      const topicChunks = splitTextIntoChunks(topic.content, chunkSize, overlap);
+      topicChunks.forEach((chunk, idx) => {
+        chunks.push({
+          content: chunk,
+          metadata: {
+            source: filename,
+            topic: topic.title,
+            topicId: topic.id,
+            chunkIndex: idx
+          }
+        });
+      });
+    });
+  } else {
+    // No topics, chunk entire document
+    const textChunks = splitTextIntoChunks(content, chunkSize, overlap);
+    textChunks.forEach((chunk, idx) => {
+      chunks.push({
+        content: chunk,
+        metadata: {
+          source: filename,
+          chunkIndex: idx
+        }
+      });
+    });
+  }
+
+  return chunks;
+}
+
+// Sync files to RAG index
+async function syncFilesToRAG(filenames) {
+  if (!RAG_ENABLED) {
+    return { success: false, message: 'RAG is disabled' };
+  }
+
+  await initializeEmbedder();
+
+  let syncedCount = 0;
+  let totalChunks = 0;
+
+  for (const filename of filenames) {
+    try {
+      const filePath = path.join(TRANSCRIPTIONS_DIR, filename);
+      const content = await fs.readFile(filePath, 'utf-8');
+
+      const chunks = chunkDocument(content, filename);
+
+      // Generate embeddings for each chunk and add to vector store
+      for (const chunk of chunks) {
+        const result = await embedder(chunk.content, { pooling: 'mean', normalize: true });
+        const embedding = Array.from(result.data);
+
+        vectorStore.push({
+          embedding,
+          content: chunk.content,
+          metadata: chunk.metadata
+        });
+      }
+
+      totalChunks += chunks.length;
+      syncedCount++;
+
+      console.log(`  ✓ Indexed: ${filename} (${chunks.length} chunks)`);
+    } catch (error) {
+      console.error(`  ✗ Failed to index ${filename}:`, error.message);
+    }
+  }
+
+  console.log(`\n📊 RAG Index: ${totalChunks} chunks from ${syncedCount} files\n`);
+
+  return {
+    success: true,
+    filesIndexed: syncedCount,
+    totalChunks: totalChunks
+  };
+}
+
+// Search RAG index
+async function searchRAG(query, topK = RAG_TOP_K) {
+  if (!vectorStore || vectorStore.length === 0) {
+    return [];
+  }
+
+  // Generate query embedding
+  const queryResult = await embedder(query, { pooling: 'mean', normalize: true });
+  const queryEmbedding = Array.from(queryResult.data);
+
+  // Calculate similarity scores for all documents
+  const scored = vectorStore.map(doc => ({
+    ...doc,
+    score: cosineSimilarity(queryEmbedding, doc.embedding)
+  }));
+
+  // Sort by score descending and take top K
+  scored.sort((a, b) => b.score - a.score);
+  const topResults = scored.slice(0, topK);
+
+  return topResults.map(doc => ({
+    content: doc.content,
+    metadata: doc.metadata,
+    score: doc.score
+  }));
 }
 
 // Parse agent filename (flow or prompt)
@@ -1300,6 +1463,29 @@ app.post('/api/run-agent', async (req, res) => {
       contextText = fileContents.join('\n\n');
     }
 
+    // Add RAG retrieval if enabled
+    if (req.body.useRAG && RAG_ENABLED && vectorStore) {
+      const ragQuery = req.body.ragQuery || artifactName;
+      const ragTopK = req.body.ragTopK || RAG_TOP_K;
+
+      console.log(`   🔍 RAG Query: "${ragQuery}"`);
+
+      const ragResults = await searchRAG(ragQuery, ragTopK);
+
+      if (ragResults.length > 0) {
+        const ragContext = ragResults.map((r, idx) =>
+          `[RAG Context ${idx + 1}] (Source: ${r.metadata.source}${r.metadata.topic ? `, Topic: ${r.metadata.topic}` : ''})\n${r.content}`
+        ).join('\n\n---\n\n');
+
+        // Prepend RAG context to existing context
+        contextText = ragContext + (contextText ? `\n\n--- Selected Files Context ---\n\n${contextText}` : '');
+
+        console.log(`   📚 Retrieved ${ragResults.length} RAG chunks`);
+      } else {
+        console.log(`   ℹ️  No RAG results found`);
+      }
+    }
+
     // Determine next version number for artifact
     const existingFiles = await fs.readdir(TRANSCRIPTIONS_DIR);
     const existingVersions = existingFiles
@@ -1613,10 +1799,62 @@ app.post('/api/format-transcriptions', async (req, res) => {
   }
 });
 
+// ===== RAG APIs =====
+
+// API: Sync files to RAG index
+app.post('/api/rag/sync', async (req, res) => {
+  try {
+    const { files } = req.body;
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'No files specified' });
+    }
+
+    console.log(`\n🔄 Syncing ${files.length} files to RAG index...`);
+    const result = await syncFilesToRAG(files);
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error syncing to RAG:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// API: Search RAG index
+app.post('/api/rag/search', async (req, res) => {
+  try {
+    const { query, topK = RAG_TOP_K } = req.body;
+
+    if (!query) {
+      return res.status(400).json({ error: 'Query is required' });
+    }
+
+    const results = await searchRAG(query, topK);
+    res.json({ results });
+  } catch (error) {
+    console.error('Error searching RAG:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Start server
 async function startServer() {
   await ensureDirectories();
-  // Removed automatic processing - now triggered manually via API
+
+  // Auto-sync RAG on startup if enabled
+  if (RAG_ENABLED && RAG_AUTO_SYNC_ON_STARTUP) {
+    try {
+      const files = await fs.readdir(TRANSCRIPTIONS_DIR);
+      const formattedFiles = files.filter(f => f.startsWith('interview_formatted_') && f.endsWith('.md'));
+
+      if (formattedFiles.length > 0) {
+        console.log(`\n🔄 Auto-syncing ${formattedFiles.length} formatted files to RAG...`);
+        await syncFilesToRAG(formattedFiles);
+      }
+    } catch (error) {
+      console.error('Error during RAG auto-sync:', error);
+    }
+  }
 
   app.listen(PORT, () => {
     console.log(`\n🚀 Server running at http://localhost:${PORT}`);
@@ -1628,6 +1866,12 @@ async function startServer() {
       console.log(`📊 LangSmith tracing: enabled (project: ${LANGSMITH_PROJECT})`);
     } else {
       console.log(`📊 LangSmith tracing: disabled`);
+    }
+
+    if (RAG_ENABLED) {
+      console.log(`📚 RAG: enabled (in-memory vector store, ${RAG_AUTO_SYNC_ON_STARTUP ? 'auto-sync on' : 'manual sync'})`);
+    } else {
+      console.log(`📚 RAG: disabled`);
     }
 
     console.log(`\nℹ️  Raw transcriptions will not be formatted automatically.`);

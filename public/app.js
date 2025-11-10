@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Setup event listeners
 function setupEventListeners() {
     document.getElementById('formatBtn').addEventListener('click', formatTranscriptions);
+    document.getElementById('syncRagBtn').addEventListener('click', syncSelectedToRAG);
     document.getElementById('refreshBtn').addEventListener('click', () => {
         loadFiles();
         loadAgents(); // Renamed from loadPrompts
@@ -53,6 +54,66 @@ function setupEventListeners() {
     document.getElementById('clearSavedSelectionBtn').addEventListener('click', clearSelection);
 
     document.getElementById('savePromptModalBtn').addEventListener('click', savePromptFromModal);
+
+    // RAG toggle handlers
+    document.getElementById('useSavedRAG').addEventListener('change', toggleRAGOptions);
+    document.getElementById('useCustomRAG').addEventListener('change', toggleRAGOptions);
+}
+
+// ==== RAG FUNCTIONS ====
+
+async function syncSelectedToRAG() {
+    const btn = document.getElementById('syncRagBtn');
+    const originalText = btn.textContent;
+
+    // Get only formatted files from selection
+    const formattedFiles = Array.from(selectedFiles.keys()).filter(f =>
+        f.startsWith('interview_formatted_') && f.endsWith('.md')
+    );
+
+    if (formattedFiles.length === 0) {
+        alert('Please select at least one formatted file (Ctrl+Click)');
+        return;
+    }
+
+    try {
+        btn.disabled = true;
+        btn.textContent = '⏳ Syncing...';
+
+        const response = await fetch(`${API_BASE}/rag/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files: formattedFiles })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to sync to RAG');
+        }
+
+        const result = await response.json();
+        alert(`✅ Synced ${result.filesProcessed} file(s), ${result.chunksAdded} chunks to RAG index`);
+
+    } catch (error) {
+        console.error('Error syncing to RAG:', error);
+        alert(`Error: ${error.message}`);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+
+function toggleRAGOptions(event) {
+    const checkbox = event.target;
+    const isCustom = checkbox.id === 'useCustomRAG';
+    const optionsId = isCustom ? 'customRagOptions' : 'savedRagOptions';
+    const optionsEl = document.getElementById(optionsId);
+
+    if (checkbox.checked) {
+        optionsEl.style.display = 'block';
+    } else {
+        optionsEl.style.display = 'none';
+    }
 }
 
 // ==== FILE MANAGEMENT ====
@@ -419,14 +480,27 @@ async function runCustomPrompt() {
         showStatus('loading', 'Running prompt with Claude...');
         document.getElementById('runPromptBtn').disabled = true;
 
+        // Get RAG parameters
+        const useRAG = document.getElementById('useCustomRAG').checked;
+        const ragQuery = document.getElementById('customRagQuery').value.trim();
+        const ragTopK = parseInt(document.getElementById('customRagTopK').value);
+
+        const requestBody = {
+            prompt: promptText,
+            files: getSelectedFilesForAPI(),
+            artifactName: artifactName
+        };
+
+        if (useRAG) {
+            requestBody.useRAG = true;
+            if (ragQuery) requestBody.ragQuery = ragQuery;
+            requestBody.ragTopK = ragTopK;
+        }
+
         const response = await fetch(`${API_BASE}/prompt`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                prompt: promptText,
-                files: getSelectedFilesForAPI(),
-                artifactName: artifactName
-            })
+            body: JSON.stringify(requestBody)
         });
 
         if (!response.ok) {
@@ -475,14 +549,27 @@ async function runSelectedAgent() {
         showSavedStatus('loading', statusMsg);
         document.getElementById('runSavedPromptBtn').disabled = true;
 
+        // Get RAG parameters
+        const useRAG = document.getElementById('useSavedRAG').checked;
+        const ragQuery = document.getElementById('savedRagQuery').value.trim();
+        const ragTopK = parseInt(document.getElementById('savedRagTopK').value);
+
+        const requestBody = {
+            agentFilename: currentAgent.filename,
+            files: getSelectedFilesForAPI(),
+            artifactName: artifactName
+        };
+
+        if (useRAG) {
+            requestBody.useRAG = true;
+            if (ragQuery) requestBody.ragQuery = ragQuery;
+            requestBody.ragTopK = ragTopK;
+        }
+
         const response = await fetch(`${API_BASE}/run-agent`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                agentFilename: currentAgent.filename,
-                files: getSelectedFilesForAPI(),
-                artifactName: artifactName
-            })
+            body: JSON.stringify(requestBody)
         });
 
         if (!response.ok) {

@@ -16,6 +16,7 @@
                     <h2>Files</h2>
                     <div class="header-buttons">
                         <button id="formatBtn" class="btn-small" title="Format raw transcriptions">📝 Format</button>
+                        <button id="syncRagBtn" class="btn-small" title="Sync selected formatted files to RAG">🔄 Sync RAG</button>
                         <button id="refreshBtn" class="btn-small" title="Refresh file list">🔄</button>
                     </div>
                 </div>
@@ -79,6 +80,35 @@
                             class="input-field"
                         >
 
+                        <div class="rag-section">
+                            <label>
+                                <input type="checkbox" id="useSavedRAG" checked>
+                                Use RAG (Retrieve relevant context)
+                            </label>
+
+                            <div id="savedRagOptions" style="margin-left: 1.5rem;">
+                                <label style="font-size: 0.85rem;">
+                                    RAG Query:
+                                    <input
+                                        type="text"
+                                        id="savedRagQuery"
+                                        placeholder="Leave empty to use artifact name"
+                                        class="input-field"
+                                        style="font-size: 0.85rem;"
+                                    >
+                                </label>
+
+                                <label style="font-size: 0.85rem;">
+                                    Results:
+                                    <select id="savedRagTopK" class="input-field" style="width: auto; font-size: 0.85rem;">
+                                        <option value="3" selected>3</option>
+                                        <option value="5">5</option>
+                                        <option value="7">7</option>
+                                    </select>
+                                </label>
+                            </div>
+                        </div>
+
                         <label>
                             Context Files:
                             <span class="help-hint">Ctrl+Click files in the left panel</span>
@@ -116,6 +146,35 @@
                             placeholder="Enter your prompt here..."
                             class="input-field"
                         ></textarea>
+
+                        <div class="rag-section">
+                            <label>
+                                <input type="checkbox" id="useCustomRAG" checked>
+                                Use RAG (Retrieve relevant context)
+                            </label>
+
+                            <div id="customRagOptions" style="margin-left: 1.5rem;">
+                                <label style="font-size: 0.85rem;">
+                                    RAG Query:
+                                    <input
+                                        type="text"
+                                        id="customRagQuery"
+                                        placeholder="Leave empty to use artifact name"
+                                        class="input-field"
+                                        style="font-size: 0.85rem;"
+                                    >
+                                </label>
+
+                                <label style="font-size: 0.85rem;">
+                                    Results:
+                                    <select id="customRagTopK" class="input-field" style="width: auto; font-size: 0.85rem;">
+                                        <option value="3" selected>3</option>
+                                        <option value="5">5</option>
+                                        <option value="7">7</option>
+                                    </select>
+                                </label>
+                            </div>
+                        </div>
 
                         <label>
                             Context Files:
