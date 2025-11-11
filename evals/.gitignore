@@ -1,0 +1,14 @@
+# Evaluation Results
+results/*.json
+!results/.gitkeep
+
+# Node modules (if any)
+node_modules/
+
+# Temp files
+*.tmp
+*.log
+
+# IDE
+.vscode/
+.idea/

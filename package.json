@@ -5,7 +5,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "eval": "node evals/scripts/run_evals.js",
+    "eval:quick": "node evals/scripts/run_evals.js --no-llm-judge",
+    "eval:compare": "node evals/scripts/compare_prompt_versions.js"
   },
   "keywords": [
     "transcription",

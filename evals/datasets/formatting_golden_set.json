@@ -1,0 +1,63 @@
+[
+  {
+    "id": "test_001_simple_interview",
+    "description": "Simple two-speaker interview with clear topics",
+    "input": "[00:00] Interviewer: Hello, thanks for joining us today. Can you start by telling me about your background?\n\n[00:15] Candidate: Sure, I've been working in software engineering for about 5 years now. I started my career at a startup where I learned full-stack development.\n\n[00:45] Interviewer: That's great. What technologies do you work with?\n\n[01:00] Candidate: Primarily JavaScript and Python. I've built APIs with Node.js and Django, and I'm comfortable with React on the frontend.\n\n[01:30] Interviewer: Interesting. Can you tell me about a challenging project you worked on?\n\n[01:45] Candidate: One of the most challenging projects was building a real-time collaboration tool. We had to handle WebSocket connections, conflict resolution, and ensure low latency for users across the globe.",
+    "expected_output": "## Introduction\n\n**[00:00] Interviewer:** Hello, thanks for joining us today. Can you start by telling me about your background?\n\n**[00:15] Candidate:** Sure, I've been working in software engineering for about 5 years now. I started my career at a startup where I learned full-stack development.\n\n## Technical Background\n\n**[00:45] Interviewer:** That's great. What technologies do you work with?\n\n**[01:00] Candidate:** Primarily JavaScript and Python. I've built APIs with Node.js and Django, and I'm comfortable with React on the frontend.\n\n## Project Discussion\n\n**[01:30] Interviewer:** Interesting. Can you tell me about a challenging project you worked on?\n\n**[01:45] Candidate:** One of the most challenging projects was building a real-time collaboration tool. We had to handle WebSocket connections, conflict resolution, and ensure low latency for users across the globe.",
+    "metadata": {
+      "speakers": 2,
+      "duration_minutes": 2,
+      "has_timestamps": true,
+      "topics": ["Introduction", "Technical Background", "Project Discussion"]
+    }
+  },
+  {
+    "id": "test_002_multi_topic",
+    "description": "Interview with multiple topic transitions",
+    "input": "Interviewer: Let's start with your experience. What brings you here today?\nCandidate: I'm looking for new challenges and your company's mission aligns with my values.\nInterviewer: Tell me about your technical skills.\nCandidate: I specialize in cloud infrastructure, particularly AWS and Kubernetes. I've managed deployments for applications serving millions of users.\nInterviewer: How do you handle system failures?\nCandidate: I believe in proactive monitoring and having robust incident response procedures. In my last role, I reduced MTTR by 40%.\nInterviewer: What are your salary expectations?\nCandidate: Based on my research and experience, I'm targeting $150-170k.\nInterviewer: Any questions for me?\nCandidate: Yes, what's the team structure like?",
+    "expected_output": "## Introduction\n\n**Interviewer:** Let's start with your experience. What brings you here today?\n\n**Candidate:** I'm looking for new challenges and your company's mission aligns with my values.\n\n## Technical Skills\n\n**Interviewer:** Tell me about your technical skills.\n\n**Candidate:** I specialize in cloud infrastructure, particularly AWS and Kubernetes. I've managed deployments for applications serving millions of users.\n\n## System Reliability\n\n**Interviewer:** How do you handle system failures?\n\n**Candidate:** I believe in proactive monitoring and having robust incident response procedures. In my last role, I reduced MTTR by 40%.\n\n## Compensation Discussion\n\n**Interviewer:** What are your salary expectations?\n\n**Candidate:** Based on my research and experience, I'm targeting $150-170k.\n\n## Closing Questions\n\n**Interviewer:** Any questions for me?\n\n**Candidate:** Yes, what's the team structure like?",
+    "metadata": {
+      "speakers": 2,
+      "duration_minutes": 5,
+      "has_timestamps": false,
+      "topics": ["Introduction", "Technical Skills", "System Reliability", "Compensation Discussion", "Closing Questions"]
+    }
+  },
+  {
+    "id": "test_003_technical_deep_dive",
+    "description": "Technical interview with code discussion",
+    "input": "[00:00] Interviewer: Let's dive into a coding problem. How would you design a URL shortener?\n[00:10] Candidate: I'd start by thinking about the core requirements. We need to generate short codes, store mappings, and handle redirects efficiently.\n[00:45] Interviewer: Good. What about the database schema?\n[01:00] Candidate: I'd use a simple table with columns: short_code (primary key), original_url, created_at, and maybe click_count for analytics.\n[01:30] Interviewer: How do you generate the short codes?\n[01:45] Candidate: I'd use base62 encoding of an auto-incrementing ID. This gives us predictable short URLs and avoids collisions.\n[02:15] Interviewer: What about scaling? How would you handle millions of redirects per second?\n[02:30] Candidate: I'd implement caching with Redis for frequently accessed URLs, use read replicas for the database, and possibly implement geo-distributed caching with CDNs.",
+    "expected_output": "## System Design Problem\n\n**[00:00] Interviewer:** Let's dive into a coding problem. How would you design a URL shortener?\n\n**[00:10] Candidate:** I'd start by thinking about the core requirements. We need to generate short codes, store mappings, and handle redirects efficiently.\n\n## Database Design\n\n**[00:45] Interviewer:** Good. What about the database schema?\n\n**[01:00] Candidate:** I'd use a simple table with columns: short_code (primary key), original_url, created_at, and maybe click_count for analytics.\n\n## Code Generation Strategy\n\n**[01:30] Interviewer:** How do you generate the short codes?\n\n**[01:45] Candidate:** I'd use base62 encoding of an auto-incrementing ID. This gives us predictable short URLs and avoids collisions.\n\n## Scaling Considerations\n\n**[02:15] Interviewer:** What about scaling? How would you handle millions of redirects per second?\n\n**[02:30] Candidate:** I'd implement caching with Redis for frequently accessed URLs, use read replicas for the database, and possibly implement geo-distributed caching with CDNs.",
+    "metadata": {
+      "speakers": 2,
+      "duration_minutes": 3,
+      "has_timestamps": true,
+      "topics": ["System Design Problem", "Database Design", "Code Generation Strategy", "Scaling Considerations"]
+    }
+  },
+  {
+    "id": "test_004_no_timestamps",
+    "description": "Interview without timestamps",
+    "input": "Interviewer: Welcome! Tell me about yourself.\nCandidate: Thanks for having me. I'm a product manager with 7 years of experience, focusing on B2B SaaS products.\nInterviewer: What's your approach to product roadmapping?\nCandidate: I use a combination of customer feedback, market research, and business goals. I typically work with quarterly OKRs and maintain a rolling 6-month roadmap.\nInterviewer: How do you prioritize features?\nCandidate: I use the RICE framework - Reach, Impact, Confidence, and Effort. It helps make prioritization decisions more objective.\nInterviewer: Tell me about a time you had to make a difficult product decision.\nCandidate: We once had to sunset a feature that 20% of users loved but was technically debt-heavy. I ran a migration plan, communicated transparently, and built a better replacement based on user feedback.",
+    "expected_output": "## Introduction\n\n**Interviewer:** Welcome! Tell me about yourself.\n\n**Candidate:** Thanks for having me. I'm a product manager with 7 years of experience, focusing on B2B SaaS products.\n\n## Product Roadmapping\n\n**Interviewer:** What's your approach to product roadmapping?\n\n**Candidate:** I use a combination of customer feedback, market research, and business goals. I typically work with quarterly OKRs and maintain a rolling 6-month roadmap.\n\n## Feature Prioritization\n\n**Interviewer:** How do you prioritize features?\n\n**Candidate:** I use the RICE framework - Reach, Impact, Confidence, and Effort. It helps make prioritization decisions more objective.\n\n## Decision Making\n\n**Interviewer:** Tell me about a time you had to make a difficult product decision.\n\n**Candidate:** We once had to sunset a feature that 20% of users loved but was technically debt-heavy. I ran a migration plan, communicated transparently, and built a better replacement based on user feedback.",
+    "metadata": {
+      "speakers": 2,
+      "duration_minutes": 4,
+      "has_timestamps": false,
+      "topics": ["Introduction", "Product Roadmapping", "Feature Prioritization", "Decision Making"]
+    }
+  },
+  {
+    "id": "test_005_edge_case_overlapping_speech",
+    "description": "Edge case with overlapping speech indicators",
+    "input": "[00:00] Interviewer: Can you-- \n[00:02] Candidate: Sorry, go ahead.\n[00:05] Interviewer: No, please continue.\n[00:08] Candidate: I was just going to say that I think communication is key in any team. In my previous role, we had daily standups and weekly retrospectives.\n[00:30] Interviewer: [overlapping] That's exactly what we-- sorry, go on.\n[00:35] Candidate: [laughs] No worries! I was saying that transparent communication helped us identify blockers early and maintain high team morale.",
+    "expected_output": "## Team Communication\n\n**[00:00] Interviewer:** Can you--\n\n**[00:02] Candidate:** Sorry, go ahead.\n\n**[00:05] Interviewer:** No, please continue.\n\n**[00:08] Candidate:** I was just going to say that I think communication is key in any team. In my previous role, we had daily standups and weekly retrospectives.\n\n**[00:30] Interviewer:** [overlapping] That's exactly what we-- sorry, go on.\n\n**[00:35] Candidate:** [laughs] No worries! I was saying that transparent communication helped us identify blockers early and maintain high team morale.",
+    "metadata": {
+      "speakers": 2,
+      "duration_minutes": 1,
+      "has_timestamps": true,
+      "topics": ["Team Communication"],
+      "edge_cases": ["overlapping_speech", "interruptions"]
+    }
+  }
+]
