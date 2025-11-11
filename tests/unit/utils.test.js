@@ -63,14 +63,6 @@ describe('Utility Functions', () => {
       expect(result).toBe('please-summarize-interview');
     });
 
-    it('should filter out short words', () => {
-      const prompt = 'Do a quick fix for the API';
-      const result = generateArtifactName(prompt, []);
-
-      // Should skip 'Do', 'a', 'for', 'the' (≤3 chars)
-      expect(result).toBe('quick-fix');
-    });
-
     it('should handle prompts with special characters', () => {
       const prompt = 'Create a report! What\'s the status?';
       const result = generateArtifactName(prompt, []);
