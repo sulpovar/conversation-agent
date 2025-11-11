@@ -66,13 +66,15 @@ async function syncSelectedToRAG() {
     const btn = document.getElementById('syncRagBtn');
     const originalText = btn.textContent;
 
-    // Get only formatted files from selection
-    const formattedFiles = Array.from(selectedFiles.keys()).filter(f =>
-        f.startsWith('interview_formatted_') && f.endsWith('.md')
-    );
+    // Get the currently highlighted (active) file
+    if (!currentFile || !currentFile.filename) {
+        alert('Please highlight a file first by clicking on it');
+        return;
+    }
 
-    if (formattedFiles.length === 0) {
-        alert('Please select at least one formatted file (Ctrl+Click)');
+    // Check if it's a formatted file
+    if (!currentFile.filename.startsWith('interview_formatted_') || !currentFile.filename.endsWith('.md')) {
+        alert('Please highlight a formatted file (interview_formatted_*.md)');
         return;
     }
 
@@ -83,7 +85,7 @@ async function syncSelectedToRAG() {
         const response = await fetch(`${API_BASE}/rag/sync`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ files: formattedFiles })
+            body: JSON.stringify({ files: [currentFile.filename] })
         });
 
         if (!response.ok) {
