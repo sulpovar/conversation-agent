@@ -1,9 +1,0 @@
-{
-  "name": "format-transcription",
-  "version": 1,
-  "description": "Initial prompt to format raw interview transcriptions into structured markdown",
-  "createdAt": "2025-11-01T12:00:00.000Z",
-  "visible": true,
-  "type": "system",
-  "category": "transcription"
-}

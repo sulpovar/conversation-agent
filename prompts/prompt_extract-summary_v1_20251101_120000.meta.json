@@ -1,9 +1,0 @@
-{
-  "name": "extract-summary",
-  "version": 1,
-  "description": "Extract a comprehensive interview summary with assessment and recommendations",
-  "createdAt": "2025-11-01T12:00:00.000Z",
-  "visible": true,
-  "type": "user",
-  "category": "analysis"
-}
