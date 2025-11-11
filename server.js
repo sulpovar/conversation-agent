@@ -5,6 +5,8 @@ const fs = require('fs').promises;
 const path = require('path');
 const { ChatAnthropic } = require('@langchain/anthropic');
 const { StateGraph, END } = require('@langchain/langgraph');
+const puppeteer = require('puppeteer');
+const { marked } = require('marked');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -109,6 +111,153 @@ function generateArtifactName(prompt, existingFiles) {
   }
 
   return artifactName;
+}
+
+// Generate PDF from markdown content
+async function generatePDF(markdownContent, outputPath) {
+  let browser;
+  try {
+    console.log(`   📄 Generating PDF: ${path.basename(outputPath)}`);
+    const startTime = Date.now();
+
+    // Convert markdown to HTML
+    const htmlContent = marked.parse(markdownContent);
+
+    // Create styled HTML document
+    const styledHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Helvetica Neue', sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 20px;
+    }
+    h1 {
+      color: #2c3e50;
+      border-bottom: 3px solid #3498db;
+      padding-bottom: 10px;
+      margin-top: 40px;
+    }
+    h2 {
+      color: #34495e;
+      border-bottom: 2px solid #95a5a6;
+      padding-bottom: 8px;
+      margin-top: 32px;
+    }
+    h3 {
+      color: #555;
+      margin-top: 24px;
+    }
+    code {
+      background: #f4f4f4;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9em;
+    }
+    pre {
+      background: #f8f8f8;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 16px;
+      overflow-x: auto;
+    }
+    pre code {
+      background: none;
+      padding: 0;
+    }
+    blockquote {
+      border-left: 4px solid #3498db;
+      padding-left: 20px;
+      margin-left: 0;
+      color: #555;
+      font-style: italic;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 20px 0;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 12px;
+      text-align: left;
+    }
+    th {
+      background-color: #f8f9fa;
+      font-weight: 600;
+    }
+    a {
+      color: #3498db;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    ul, ol {
+      padding-left: 30px;
+    }
+    li {
+      margin: 8px 0;
+    }
+    hr {
+      border: none;
+      border-top: 2px solid #e0e0e0;
+      margin: 30px 0;
+    }
+    .page-break {
+      page-break-after: always;
+    }
+  </style>
+</head>
+<body>
+${htmlContent}
+</body>
+</html>
+`;
+
+    // Launch puppeteer
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+
+    const page = await browser.newPage();
+    await page.setContent(styledHTML, { waitUntil: 'networkidle0' });
+
+    // Generate PDF
+    await page.pdf({
+      path: outputPath,
+      format: 'A4',
+      margin: {
+        top: '20mm',
+        right: '20mm',
+        bottom: '20mm',
+        left: '20mm'
+      },
+      printBackground: true
+    });
+
+    await browser.close();
+    browser = null;
+
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`   ✅ PDF generated in ${duration}s`);
+
+    return true;
+  } catch (error) {
+    if (browser) {
+      await browser.close();
+    }
+    console.error(`   ❌ Error generating PDF:`, error.message);
+    throw error;
+  }
 }
 
 // Parse filename to extract metadata
@@ -1002,6 +1151,19 @@ app.post('/api/prompt', async (req, res) => {
     const artifactPath = path.join(TRANSCRIPTIONS_DIR, artifactFilename);
     await fs.writeFile(artifactPath, result, 'utf-8');
 
+    // Generate PDF if requested
+    let pdfFilename = null;
+    if (req.body.generatePDF) {
+      try {
+        pdfFilename = artifactFilename.replace('.md', '.pdf');
+        const pdfPath = path.join(TRANSCRIPTIONS_DIR, pdfFilename);
+        await generatePDF(result, pdfPath);
+      } catch (pdfError) {
+        console.error(`⚠️  PDF generation failed, continuing with markdown only:`, pdfError.message);
+        pdfFilename = null;
+      }
+    }
+
     // Save metadata
     const metaPath = path.join(TRANSCRIPTIONS_DIR, `${artifactFilename}.meta.json`);
     const metadata = {
@@ -1010,11 +1172,13 @@ app.post('/api/prompt', async (req, res) => {
       version: nextVersion,
       createdAt: new Date().toISOString(),
       model: CLAUDE_MODEL,
-      type: 'prompt_artifact'
+      type: 'prompt_artifact',
+      pdfGenerated: !!pdfFilename,
+      pdfFilename: pdfFilename
     };
     await fs.writeFile(metaPath, JSON.stringify(metadata, null, 2), 'utf-8');
 
-    console.log(`✓ Created: ${artifactFilename}`);
+    console.log(`✓ Created: ${artifactFilename}${pdfFilename ? ` + ${pdfFilename}` : ''}`);
 
     res.json({
       filename: artifactFilename,
@@ -1615,11 +1779,28 @@ app.post('/api/run-agent', async (req, res) => {
     const artifactPath = path.join(TRANSCRIPTIONS_DIR, artifactFilename);
     await fs.writeFile(artifactPath, result, 'utf-8');
 
+    // Generate PDF if requested
+    let pdfFilename = null;
+    if (req.body.generatePDF) {
+      try {
+        pdfFilename = artifactFilename.replace('.md', '.pdf');
+        const pdfPath = path.join(TRANSCRIPTIONS_DIR, pdfFilename);
+        await generatePDF(result, pdfPath);
+      } catch (pdfError) {
+        console.error(`⚠️  PDF generation failed, continuing with markdown only:`, pdfError.message);
+        pdfFilename = null;
+      }
+    }
+
+    // Add PDF info to metadata
+    agentMetadata.pdfGenerated = !!pdfFilename;
+    agentMetadata.pdfFilename = pdfFilename;
+
     // Save metadata
     const metaPath = path.join(TRANSCRIPTIONS_DIR, `${artifactFilename}.meta.json`);
     await fs.writeFile(metaPath, JSON.stringify(agentMetadata, null, 2), 'utf-8');
 
-    console.log(`✓ Created: ${artifactFilename}`);
+    console.log(`✓ Created: ${artifactFilename}${pdfFilename ? ` + ${pdfFilename}` : ''}`);
 
     res.json({
       filename: artifactFilename,
@@ -1725,6 +1906,19 @@ app.post('/api/run-saved-prompt', async (req, res) => {
     const artifactPath = path.join(TRANSCRIPTIONS_DIR, artifactFilename);
     await fs.writeFile(artifactPath, result, 'utf-8');
 
+    // Generate PDF if requested
+    let pdfFilename = null;
+    if (req.body.generatePDF) {
+      try {
+        pdfFilename = artifactFilename.replace('.md', '.pdf');
+        const pdfPath = path.join(TRANSCRIPTIONS_DIR, pdfFilename);
+        await generatePDF(result, pdfPath);
+      } catch (pdfError) {
+        console.error(`⚠️  PDF generation failed, continuing with markdown only:`, pdfError.message);
+        pdfFilename = null;
+      }
+    }
+
     // Save metadata
     const metaPath = path.join(TRANSCRIPTIONS_DIR, `${artifactFilename}.meta.json`);
     const metadata = {
@@ -1734,11 +1928,13 @@ app.post('/api/run-saved-prompt', async (req, res) => {
       version: nextVersion,
       createdAt: new Date().toISOString(),
       model: CLAUDE_MODEL,
-      type: 'prompt_artifact'
+      type: 'prompt_artifact',
+      pdfGenerated: !!pdfFilename,
+      pdfFilename: pdfFilename
     };
     await fs.writeFile(metaPath, JSON.stringify(metadata, null, 2), 'utf-8');
 
-    console.log(`✓ Created: ${artifactFilename}`);
+    console.log(`✓ Created: ${artifactFilename}${pdfFilename ? ` + ${pdfFilename}` : ''}`);
 
     res.json({
       filename: artifactFilename,

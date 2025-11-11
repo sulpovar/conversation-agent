@@ -476,9 +476,13 @@ async function runCustomPrompt() {
         const ragQuery = document.getElementById('customRagQuery').value.trim();
         const ragTopK = parseInt(document.getElementById('customRagTopK').value);
 
+        // Get PDF generation flag
+        const generatePDF = document.getElementById('customGeneratePDF').checked;
+
         const requestBody = {
             prompt: promptText,
-            files: getSelectedFilesForAPI()
+            files: getSelectedFilesForAPI(),
+            generatePDF: generatePDF
         };
 
         if (useRAG) {
@@ -532,9 +536,13 @@ async function runSelectedAgent() {
         const ragQuery = document.getElementById('savedRagQuery').value.trim();
         const ragTopK = parseInt(document.getElementById('savedRagTopK').value);
 
+        // Get PDF generation flag
+        const generatePDF = document.getElementById('savedGeneratePDF').checked;
+
         const requestBody = {
             agentFilename: currentAgent.filename,
-            files: getSelectedFilesForAPI()
+            files: getSelectedFilesForAPI(),
+            generatePDF: generatePDF
         };
 
         if (useRAG) {
