@@ -1,0 +1,27 @@
+[00:00] Interviewer: Hello, thank you for joining us today. Could you start by telling us a bit about your background?
+
+[00:15] Candidate: Sure, I'd be happy to. I've been working in software engineering for about 8 years now, primarily focused on backend systems and distributed architectures.
+
+[00:45] Interviewer: That's great. Can you tell me about a challenging technical problem you've solved recently?
+
+[01:00] Candidate: Absolutely. At my last company, we were experiencing significant latency issues in our microservices communication. I led an initiative to implement a service mesh using Istio, which reduced our P99 latency by 60%.
+
+[01:30] Interviewer: Impressive. How did you approach the implementation?
+
+[01:35] Candidate: We started with a thorough analysis of our traffic patterns, then did a phased rollout starting with our least critical services. We also invested heavily in observability to track the impact.
+
+[02:00] Interviewer: What technologies are you most excited about right now?
+
+[02:05] Candidate: I'm particularly interested in the developments around LLMs and how they can be integrated into production systems. I've been experimenting with RAG architectures and prompt engineering.
+
+[02:30] Interviewer: Excellent. Do you have any questions for us?
+
+[02:35] Candidate: Yes, I'm curious about your team's approach to technical debt and how you balance feature development with system maintenance.
+
+[02:50] Interviewer: That's a great question. We follow a 70-20-10 rule where 70% is feature work, 20% is technical debt, and 10% is experimentation.
+
+[03:10] Candidate: That sounds like a healthy balance.
+
+[03:15] Interviewer: Well, thank you for your time today. We'll be in touch soon.
+
+[03:20] Candidate: Thank you for the opportunity. Looking forward to hearing from you.
