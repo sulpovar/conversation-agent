@@ -84,6 +84,33 @@ function getTimestamp() {
   return now.toISOString().replace(/[-:]/g, '').replace('T', '_').split('.')[0];
 }
 
+// Generate artifact name from prompt/content
+function generateArtifactName(prompt, existingFiles) {
+  // Extract meaningful words from prompt (first few words)
+  const words = prompt
+    .toLowerCase()
+    .replace(/[^\w\s]/g, '')
+    .split(/\s+/)
+    .filter(w => w.length > 3) // Filter out short words
+    .slice(0, 3); // Take first 3 meaningful words
+
+  let baseName = words.length > 0 ? words.join('-') : 'artifact';
+
+  // Ensure it matches the validation pattern
+  baseName = baseName.replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-');
+
+  // Check if this base name already exists and find next available suffix
+  let artifactName = baseName;
+  let suffix = 1;
+
+  while (existingFiles.some(f => f.startsWith(`artifact_${artifactName}_v`))) {
+    artifactName = `${baseName}-${suffix}`;
+    suffix++;
+  }
+
+  return artifactName;
+}
+
 // Parse filename to extract metadata
 function parseFilename(filename) {
   const parts = filename.split('_');
@@ -892,10 +919,10 @@ app.get('/api/files/:filename/topics', async (req, res) => {
 // API: Run prompt with files
 app.post('/api/prompt', async (req, res) => {
   try {
-    const { prompt, files, artifactName } = req.body;
+    const { prompt, files } = req.body;
 
-    if (!prompt || !artifactName) {
-      return res.status(400).json({ error: 'Prompt and artifact name are required' });
+    if (!prompt) {
+      return res.status(400).json({ error: 'Prompt is required' });
     }
 
     // Read file contents with optional topic selection
@@ -932,8 +959,11 @@ app.post('/api/prompt', async (req, res) => {
       contextText = fileContents.join('\n\n');
     }
 
-    // Determine next version number
+    // Generate artifact name from prompt
     const existingFiles = await fs.readdir(TRANSCRIPTIONS_DIR);
+    const artifactName = generateArtifactName(prompt, existingFiles);
+
+    // Determine next version number
     const existingVersions = existingFiles
       .filter(f => f.startsWith(`artifact_${artifactName}_v`))
       .map(f => {
@@ -1423,10 +1453,10 @@ app.post('/api/prompts/delete', async (req, res) => {
 // API: Run agent (flow or prompt)
 app.post('/api/run-agent', async (req, res) => {
   try {
-    const { agentFilename, files, artifactName } = req.body;
+    const { agentFilename, files } = req.body;
 
-    if (!agentFilename || !artifactName) {
-      return res.status(400).json({ error: 'Agent filename and artifact name are required' });
+    if (!agentFilename) {
+      return res.status(400).json({ error: 'Agent filename is required' });
     }
 
     // Determine agent type
@@ -1463,6 +1493,21 @@ app.post('/api/run-agent', async (req, res) => {
       contextText = fileContents.join('\n\n');
     }
 
+    // Load agent content to generate artifact name
+    let agentContentForNaming = '';
+    if (agentInfo.agentType === 'flow') {
+      const flowDef = await loadFlowDefinition(agentFilename);
+      agentContentForNaming = flowDef.name || agentInfo.name;
+    } else {
+      const promptPath = path.join(PROMPTS_DIR, agentFilename);
+      const promptContent = await fs.readFile(promptPath, 'utf-8');
+      agentContentForNaming = promptContent.substring(0, 200); // Use first 200 chars
+    }
+
+    // Generate artifact name from agent content
+    const existingFiles = await fs.readdir(TRANSCRIPTIONS_DIR);
+    const artifactName = generateArtifactName(agentContentForNaming, existingFiles);
+
     // Add RAG retrieval if enabled
     if (req.body.useRAG && RAG_ENABLED && vectorStore) {
       const ragQuery = req.body.ragQuery || artifactName;
@@ -1487,7 +1532,6 @@ app.post('/api/run-agent', async (req, res) => {
     }
 
     // Determine next version number for artifact
-    const existingFiles = await fs.readdir(TRANSCRIPTIONS_DIR);
     const existingVersions = existingFiles
       .filter(f => f.startsWith(`artifact_${artifactName}_v`))
       .map(f => {
@@ -1593,10 +1637,10 @@ app.post('/api/run-agent', async (req, res) => {
 // Backward compatibility: Run saved prompt
 app.post('/api/run-saved-prompt', async (req, res) => {
   try {
-    const { promptFilename, files, artifactName } = req.body;
+    const { promptFilename, files } = req.body;
 
-    if (!promptFilename || !artifactName) {
-      return res.status(400).json({ error: 'Prompt filename and artifact name are required' });
+    if (!promptFilename) {
+      return res.status(400).json({ error: 'Prompt filename is required' });
     }
 
     // Read prompt content
@@ -1637,8 +1681,11 @@ app.post('/api/run-saved-prompt', async (req, res) => {
       contextText = fileContents.join('\n\n');
     }
 
-    // Determine next version number
+    // Generate artifact name from prompt content
     const existingFiles = await fs.readdir(TRANSCRIPTIONS_DIR);
+    const artifactName = generateArtifactName(promptContent.substring(0, 200), existingFiles);
+
+    // Determine next version number
     const existingVersions = existingFiles
       .filter(f => f.startsWith(`artifact_${artifactName}_v`))
       .map(f => {

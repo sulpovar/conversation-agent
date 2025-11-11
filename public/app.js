@@ -460,21 +460,10 @@ function setPromptMode(mode) {
 // ==== CUSTOM PROMPT ACTIONS ====
 
 async function runCustomPrompt() {
-    const artifactName = document.getElementById('artifactName').value.trim();
     const promptText = document.getElementById('promptText').value.trim();
-
-    if (!artifactName) {
-        showStatus('error', 'Please enter an artifact name');
-        return;
-    }
 
     if (!promptText) {
         showStatus('error', 'Please enter a prompt');
-        return;
-    }
-
-    if (!/^[a-zA-Z0-9_-]+$/.test(artifactName)) {
-        showStatus('error', 'Artifact name can only contain letters, numbers, hyphens, and underscores');
         return;
     }
 
@@ -489,8 +478,7 @@ async function runCustomPrompt() {
 
         const requestBody = {
             prompt: promptText,
-            files: getSelectedFilesForAPI(),
-            artifactName: artifactName
+            files: getSelectedFilesForAPI()
         };
 
         if (useRAG) {
@@ -528,20 +516,8 @@ async function runCustomPrompt() {
 // ==== SAVED PROMPT ACTIONS ====
 
 async function runSelectedAgent() {
-    const artifactName = document.getElementById('savedArtifactName').value.trim();
-
     if (!currentAgent) {
         showSavedStatus('error', 'Please select an agent');
-        return;
-    }
-
-    if (!artifactName) {
-        showSavedStatus('error', 'Please enter an artifact name');
-        return;
-    }
-
-    if (!/^[a-zA-Z0-9_-]+$/.test(artifactName)) {
-        showSavedStatus('error', 'Artifact name can only contain letters, numbers, hyphens, and underscores');
         return;
     }
 
@@ -558,8 +534,7 @@ async function runSelectedAgent() {
 
         const requestBody = {
             agentFilename: currentAgent.filename,
-            files: getSelectedFilesForAPI(),
-            artifactName: artifactName
+            files: getSelectedFilesForAPI()
         };
 
         if (useRAG) {

@@ -71,14 +71,6 @@
                     </div>
 
                     <div class="prompt-actions-section">
-                        <label>Artifact Name:</label>
-                        <input
-                            type="text"
-                            id="savedArtifactName"
-                            placeholder="e.g., summary, analysis"
-                            class="input-field"
-                        >
-
                         <div class="rag-section">
                             <label>
                                 <input type="checkbox" id="useSavedRAG" checked>
@@ -91,7 +83,7 @@
                                     <input
                                         type="text"
                                         id="savedRagQuery"
-                                        placeholder="Leave empty to use artifact name"
+                                        placeholder="Enter search query"
                                         class="input-field"
                                         style="font-size: 0.85rem;"
                                     >
@@ -130,14 +122,6 @@
                 <!-- Custom Prompt View -->
                 <div id="customPromptView" class="prompt-view">
                     <div class="prompt-form">
-                        <label for="artifactName">Artifact Name:</label>
-                        <input
-                            type="text"
-                            id="artifactName"
-                            placeholder="e.g., summary, analysis, report"
-                            class="input-field"
-                        >
-
                         <label for="promptText">Prompt:</label>
                         <textarea
                             id="promptText"
@@ -158,7 +142,7 @@
                                     <input
                                         type="text"
                                         id="customRagQuery"
-                                        placeholder="Leave empty to use artifact name"
+                                        placeholder="Enter search query"
                                         class="input-field"
                                         style="font-size: 0.85rem;"
                                     >
@@ -196,7 +180,6 @@
                         <h3>How to use:</h3>
                         <ol>
                             <li>Select files with Ctrl+click in the Files panel</li>
-                            <li>Enter an artifact name</li>
                             <li>Write your prompt</li>
                             <li>Click "Run Prompt" or "Save As..." to save for reuse</li>
                         </ol>
